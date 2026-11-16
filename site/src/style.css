@@ -124,3 +124,15 @@ footer kbd { color: var(--accent); font: inherit; }
 .column .intro { padding-bottom: 12px; }
 .column .intro dl { grid-template-columns: 1fr; gap: 0; }
 .column .intro dd { margin-bottom: 6px; }
+
+/* The finder: narrow columns of choices, one line each, with their counts. */
+.finder .column { flex-grow: 0; flex-shrink: 0; }
+.finder .column.preview { flex: 1 0 380px; }
+.finder .column:nth-child(5) { flex-basis: 400px; }
+.facet { list-style: none; margin: 0; padding: 0; }
+.facet li { display: flex; justify-content: space-between; gap: 10px; padding: 3px 6px; cursor: pointer; }
+.facet strong { font-weight: 400; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.facet .dim { flex: none; }
+.facet li.selected { background: var(--panel); }
+.column.focused .facet li.selected { background: var(--select); color: #fff; }
+.column.focused .facet li.selected .dim, .column.focused .facet li.selected strong { color: #fff; }

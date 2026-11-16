@@ -21,6 +21,9 @@
   time as the reader scrolls or moves down. On a wide screen the pages
   show side by side, as Finder's column view does, and the pages that led here are listed in
   the address, separated by `|`; `?view=pages` shows one page at a time, as phones always do.
+- `#/find` is the finder (wide screens only): a day, a film, a cinema and a format chosen
+  together, each column counting what the other three leave. It is an experiment reached from
+  the menu; the menu's other paths do not depend on it.
 - `#/` is the welcome page, `#/browse` the menu (always the first column). Each thing has one
   place: cinemas and locations in the menu, the other choices in Settings. A bookmark keeps all of it; nothing is
   stored in the browser.

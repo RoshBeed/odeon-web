@@ -1,6 +1,6 @@
 // The interface: a stack of tables over the listings, driven by keys, clicks or taps.
 import { ics } from './calendar';
-import { needsEveryCinema, readChoice, writeChoices } from './choices';
+import { needsEveryCinema, readChoice, readPage, writeChoices, writePage, type Ui } from './choices';
 import { openListings } from './db';
 import * as q from './queries';
 import { formats, place, shortCinema, tagKind, tagLabel, type TagKind } from './tags';
@@ -49,20 +49,12 @@ interface View {
   /** Keys that act on the page itself, not on a row. */
   keys?: Record<string, () => void>;
 }
-interface Ui {
-  order: number | null;
-  descending: boolean;
-  text: string;
-  page: number;
-  selected: number;
-}
 
 let db: q.Listings;
 /** Whether `db` holds every cinema's showings, or only Greater London's. */
 let whole = false;
 let everything: Promise<void> | undefined;
 const app = document.getElementById('app')!;
-const uis = new Map<string, Ui>();
 const narrow = matchMedia('(max-width: 640px)');
 
 // ---- What the visitor has chosen, kept in the page's address ---------------
@@ -550,10 +542,28 @@ function viewFor(route: string): View {
 
 // ---- Rendering and keys -------------------------------------------------
 
-const route = () => location.hash.replace(/^#\/?/, '');
-let current: { view: View; ui: Ui; table: Table };
+const route = () => readPage(location.hash).route;
+let current: { route: string; view: View; ui: Ui; table: Table };
 
-const go = (target: string) => { location.hash = '#/' + target; };
+/** The sort, search, page and highlighted row go in the address too, so that a
+ *  bookmark, a link or going back returns to exactly this. They are written
+ *  after a short pause, because browsers limit how often an address may change. */
+let noting = 0;
+function note() {
+  clearTimeout(noting);
+  noting = window.setTimeout(noteNow, 300);
+}
+function noteNow() {
+  clearTimeout(noting);
+  if (!current || current.route !== route()) return;
+  const hash = writePage(current.route, current.ui);
+  if (hash !== (location.hash || '#/')) history.replaceState(null, '', location.pathname + location.search + hash);
+}
+
+function go(target: string) {
+  noteNow(); // so that going back finds this page as it was left
+  location.hash = '#/' + target;
+}
 function back() {
   if (!route()) return;
   if (history.length > 1) history.back();
@@ -572,8 +582,7 @@ function render() {
     return;
   }
   if (!db) return; // still downloading; load() draws the page when it arrives
-  if (!uis.has(key)) uis.set(key, { order: null, descending: false, text: '', page: 0, selected: 0 });
-  const ui = uis.get(key)!;
+  const { ui } = readPage(location.hash);
   const view = viewFor(key);
   document.title = key ? `${view.title} · ODEON` : 'ODEON';
   const search = h('input', { type: 'search', placeholder: 'Search this table', 'aria-label': 'Search this table' }) as HTMLInputElement;
@@ -595,7 +604,7 @@ function render() {
       })),
       h('span', { class: 'status' }, `listings from ${stamp ? day(stamp) : 'no ingest yet'}`)),
   );
-  current = { view, ui, table: { columns: [], rows: [], total: 0 } };
+  current = { route: key, view, ui, table: { columns: [], rows: [], total: 0 } };
   paint();
   window.scrollTo(0, 0);
 }
@@ -682,6 +691,7 @@ function paint() {
     ...(table.rows.length ? [] : [h('p', { class: 'empty' }, ticks.size ? 'Nothing here for your ticked cinemas.' : 'Nothing here.')]),
   ] : []));
   if (!narrow.matches) list.querySelector('.selected')?.scrollIntoView({ block: 'nearest' });
+  note();
 }
 
 function move(step: number) {
@@ -692,6 +702,7 @@ function move(step: number) {
   ui.selected = Math.max(0, Math.min(table.rows.length - 1, ui.selected + step));
   items[ui.selected]?.classList.add('selected');
   if (!narrow.matches) items[ui.selected]?.scrollIntoView({ block: 'nearest' });
+  note();
 }
 function turn(step: number) {
   const { ui, table } = current;

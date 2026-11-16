@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest';
 import { ics } from './calendar';
-import { needsEveryCinema, readChoice, writeChoices } from './choices';
+import { needsEveryCinema, readChoice, readPage, writeChoices, writePage } from './choices';
 import type { ShowingDetail } from './queries';
 import { formats, place, tagKind, tagLabel } from './tags';
 
@@ -57,4 +57,15 @@ test("Greater London's listings will do until a page is about another cinema", (
     [true, true, true, true, true, true]);
   expect(needsEveryCinema('', new Set())).toBe(true);
   expect(needsEveryCinema('', new Set(['155', '001']))).toBe(true);
+});
+
+test('a page carries its sort, search, page and row in the address', () => {
+  const plain = { order: null, descending: false, text: '', page: 0, selected: 0 };
+  expect(readPage('')).toEqual({ route: '', ui: plain });
+  expect(readPage('#/film/F1/155')).toEqual({ route: 'film/F1/155', ui: plain });
+  const busy = { order: 3, descending: true, text: 'wick & co', page: 1, selected: 4 };
+  expect(writePage('films', busy)).toBe('#/films?sort=3&desc=1&q=wick%20%26%20co&page=2&row=5');
+  expect(readPage(writePage('films', busy))).toEqual({ route: 'films', ui: busy });
+  expect(writePage('', plain)).toBe('#/');
+  expect(readPage('#/films?sort=x&page=-2&row=0').ui).toEqual({ ...plain, order: 0 });
 });

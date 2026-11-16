@@ -571,10 +571,30 @@ function showView(cinema: string, id: string): View {
     ]),
     h('p', { class: 'actions' }, link('Book on odeon.co.uk', book, true), button('Add to calendar', calendar)),
   );
+  // Double bills: what else is on at this cinema just before or just after.
+  const near = q.around(db, scope([]), cinema, id);
+  const columns: Column[] = [{ label: 'Double bill' }, { label: 'Time' }, { label: 'Ends' }, { label: 'Film', wrap: true }, { label: 'Screen' }, { label: 'Seats', right: true }];
+  const bill = (rows: q.Neighbour[], when: string, heading: string) => rows.map((row, index): Row => {
+    const ends = row.endsAt ? TIME.format(new Date(row.endsAt)) : null;
+    return {
+      cells: [`${when}, ${row.gap} min gap`, row.time, ends, row.title, row.screen.replace(/^Screen /, ''), row.capacity],
+      open: path('show', row.cinemaId, row.id),
+      book: BOOKING + row.id,
+      calendar: () => addToCalendar(row.cinemaId, row.id),
+      sold: row.soldOut,
+      day: index ? undefined : heading,
+      card: {
+        title: `${ends ? `${row.time}–${ends}` : row.time}  ${row.title}`,
+        meta: [`${row.gap} min gap`, row.screen, row.capacity ? `${row.capacity} seats` : '', formats(row.experiences)].filter(Boolean).join(' · '),
+      },
+    };
+  });
+  const rows = [...bill(near.after, 'after', 'Straight after this'), ...bill(near.before, 'before', 'Just before this')];
   return {
     title: `${show.title} · ${show.time}`,
+    plain: true,
     intro,
-    table: () => ({ columns: [], rows: [], total: 0 }),
+    table: (ui) => (rows.length ? local(columns, rows, ui) : { columns: [], rows: [], total: 0 }),
     keys: { b: () => window.open(book, '_blank', 'noopener'), c: calendar },
   };
 }
@@ -952,6 +972,7 @@ function sortBy(index: number, flipSame = true) {
 }
 function nextSort() {
   const { ui, view, table } = current;
+  if (view.plain) return;
   const sortable = table.columns.map((column, index) => (!view.paged || column.order ? index : -1)).filter((index) => index >= 0);
   if (sortable.length) sortBy(sortable[(sortable.indexOf(ui.order ?? -1) + 1) % sortable.length]);
 }

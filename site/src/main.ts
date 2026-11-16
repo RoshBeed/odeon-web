@@ -88,8 +88,9 @@ function toggle(set: Set<string>, key: string, ids: string[], on?: boolean) {
 
 /** Counts that scan every showing are kept until a choice or the hour changes. */
 const remembered = new Map<string, unknown>();
+const rememberKey = (name: string) => `${version}/${new Date().toISOString().slice(0, 13)}/${name}`;
 function remember<T>(name: string, make: () => T): T {
-  const key = `${version}/${new Date().toISOString().slice(0, 13)}/${name}`;
+  const key = rememberKey(name);
   if (!remembered.has(key)) {
     if (remembered.size > 40) remembered.clear();
     remembered.set(key, make());
@@ -186,11 +187,38 @@ const FACET_MENUS = [
   ['Distributors', 'distributor', 'distributor'],
 ] as const;
 
-const experienceTags = () => remember('tags', () => q.tags(db, scope(), 'experiences'));
-const seatTypes = () => remember('seats', () => q.tags(db, scope(), 'seating'));
-const allScreens = () => remember('screens', () => q.screens(db, scope()));
-const facetRows = (kind: 'certificate' | 'person' | 'genre' | 'distributor') =>
-  remember(kind, () => q.facet(db, scope(), kind));
+// Counts that read every showing: too slow to hold up the first page.
+const SLOW = {
+  tags: () => q.tags(db, scope(), 'experiences'),
+  seats: () => q.tags(db, scope(), 'seating'),
+  screens: () => q.screens(db, scope()),
+  certificate: () => q.facet(db, scope(), 'certificate'),
+  person: () => q.facet(db, scope(), 'person'),
+  genre: () => q.facet(db, scope(), 'genre'),
+  distributor: () => q.facet(db, scope(), 'distributor'),
+};
+type Slow = typeof SLOW;
+const counted = <K extends keyof Slow>(name: K) => remember<unknown>(name, SLOW[name]) as ReturnType<Slow[K]>;
+const counting = new Set<string>();
+/** A slow count if it is already known; otherwise it is worked out once the
+ *  page is on screen, and the start page is drawn again with it. */
+function later<K extends keyof Slow>(name: K): ReturnType<Slow[K]> | undefined {
+  const key = rememberKey(name);
+  if (remembered.has(key)) return remembered.get(key) as ReturnType<Slow[K]>;
+  if (!counting.has(key)) {
+    counting.add(key);
+    setTimeout(() => {
+      counting.delete(key);
+      counted(name);
+      if (!route()) paint();
+    });
+  }
+  return undefined;
+}
+const experienceTags = () => counted('tags');
+const seatTypes = () => counted('seats');
+const allScreens = () => counted('screens');
+const facetRows = (kind: 'certificate' | 'person' | 'genre' | 'distributor') => counted(kind);
 const allCinemas = () => remember('cinemas', () => q.cinemas(db, scope()));
 const some = (names: string[]) => names.slice(0, 3).join(', ') + (names.length > 3 ? ', …' : '');
 
@@ -198,28 +226,32 @@ function homeView(): View {
   const home = q.home(db, scope());
   const [first, last] = q.weekend(scope().today);
   const places = new Set(allCinemas().map(place));
-  const rows: Row[] = [
-    { cells: ['Films', count(home.films, 'film'), count(home.showings, 'showing')], open: 'films' },
-    { cells: ['Cinemas', count(home.allCinemas, 'cinema'), ticks.size ? `${count(ticks.size, 'cinema')} ticked` : 'all'], open: 'cinemas' },
-    { cells: ['Location', count(places.size, 'location'), 'browse or tick cinema groups'], open: 'locations' },
-    { cells: ['Tonight', count(home.tonight, 'screening'), count(home.tonightFilms, 'film')], open: 'tonight' },
-    { cells: ['This weekend', count(home.weekendShows, 'screening'), `${count(home.weekendFilms, 'film')} · ${day(first)} – ${day(last)}`], open: 'weekend' },
-    { cells: ['Opening soon', count(home.soon, 'film'), home.next ? `next: ${home.next.title} (${fullDate(home.next.release)})` : ''], open: 'soon' },
-    { cells: ['Dates', count(home.days, 'day'), home.from ? `${day(home.from)} – ${fullDate(home.to)}` : ''], open: 'dates' },
-    { cells: ['Screens', count(allScreens().length, 'screen'), 'by size, with formats'], open: 'screens' },
-    ...TAG_MENUS.map(([name, kind, noun]): Row => {
-      const found = experienceTags().filter((row) => tagKind(row.tag) === kind);
-      return { cells: [name, count(found.length, noun), some(found.map((row) => tagLabel(row.tag)))], open: path('tags', kind) };
-    }),
-    { cells: ['Seating', count(seatTypes().length, 'seat type'), some(seatTypes().map((row) => row.tag))], open: 'seats' },
-    ...FACET_MENUS.map(([name, kind, noun]): Row => {
-      const found = facetRows(kind);
-      const busiest = [...found].sort((a, b) => b.showings - a.showings).map((row) => row.name);
-      return { cells: [name, count(found.length, noun), some(busiest)], open: path('by', kind) };
-    }),
-    { cells: ['All showtimes', count(home.showings, 'screening'), 'every film, cinema and day'], open: 'all' },
-    ...(hidden.size ? [{ cells: ['Hidden films', count(hidden.size, 'film'), 'show them again'], open: 'hidden' }] : []),
-  ];
+  const rows = (): Row[] => {
+    const [screens, tags, seats] = [later('screens'), later('tags'), later('seats')];
+    return [
+      { cells: ['Films', count(home.films, 'film'), count(home.showings, 'showing')], open: 'films' },
+      { cells: ['Cinemas', count(home.allCinemas, 'cinema'), ticks.size ? `${count(ticks.size, 'cinema')} ticked` : 'all'], open: 'cinemas' },
+      { cells: ['Location', count(places.size, 'location'), 'browse or tick cinema groups'], open: 'locations' },
+      { cells: ['Tonight', count(home.tonight, 'screening'), count(home.tonightFilms, 'film')], open: 'tonight' },
+      { cells: ['This weekend', count(home.weekendShows, 'screening'), `${count(home.weekendFilms, 'film')} · ${day(first)} – ${day(last)}`], open: 'weekend' },
+      { cells: ['Opening soon', count(home.soon, 'film'), home.next ? `next: ${home.next.title} (${fullDate(home.next.release)})` : ''], open: 'soon' },
+      { cells: ['Dates', count(home.days, 'day'), home.from ? `${day(home.from)} – ${fullDate(home.to)}` : ''], open: 'dates' },
+      { cells: ['Screens', screens ? count(screens.length, 'screen') : '…', 'by size, with formats'], open: 'screens' },
+      ...TAG_MENUS.map(([name, kind, noun]): Row => {
+        const found = tags?.filter((row) => tagKind(row.tag) === kind);
+        return { cells: [name, found ? count(found.length, noun) : '…', found ? some(found.map((row) => tagLabel(row.tag))) : ''], open: path('tags', kind) };
+      }),
+      { cells: ['Seating', seats ? count(seats.length, 'seat type') : '…', seats ? some(seats.map((row) => row.tag)) : ''], open: 'seats' },
+      ...FACET_MENUS.map(([name, kind, noun]): Row => {
+        const found = later(kind);
+        if (!found) return { cells: [name, '…', ''], open: path('by', kind) };
+        const busiest = [...found].sort((a, b) => b.showings - a.showings).map((row) => row.name);
+        return { cells: [name, count(found.length, noun), some(busiest)], open: path('by', kind) };
+      }),
+      { cells: ['All showtimes', count(home.showings, 'screening'), 'every film, cinema and day'], open: 'all' },
+      ...(hidden.size ? [{ cells: ['Hidden films', count(hidden.size, 'film'), 'show them again'], open: 'hidden' }] : []),
+    ];
+  };
   const intro = h('div', { class: 'intro' },
     h('p', {}, "ODEON · what's on, on which screen, and how big it is."),
     h('p', { class: 'dim phone' }, 'Tick your cinemas in Cinemas or Location and everything shows only those. Your ticks are remembered on this phone.'),
@@ -231,7 +263,7 @@ function homeView(): View {
     ]),
   );
   const columns = [{ label: 'Browse' }, { label: 'How many' }, { label: 'Showing', wrap: true }];
-  return { title: 'Start', intro, table: (ui) => local(columns, rows, ui) };
+  return { title: 'Start', intro, table: (ui) => local(columns, rows(), ui) };
 }
 
 function filmsView(title = 'Films', filter: q.FilmFilter = {}): View {
@@ -241,7 +273,7 @@ function filmsView(title = 'Films', filter: q.FilmFilter = {}): View {
     { label: 'Cinemas', right: true }, { label: 'Showings', right: true }, { label: 'Next', wide: true },
   ];
   const table = (ui: Ui) => {
-    const rows = q.films(db, scope(), filter).map((film): Row => ({
+    const rows = remember('films/' + JSON.stringify(filter), () => q.films(db, scope(), filter).map((film): Row => ({
       cells: [film.title, film.certificate || 'TBC', film.runtime, film.imdb?.toFixed(1) ?? null, film.metacritic, film.cinemas, film.showings, when(film.next)],
       values: [film.title, film.certificate, film.runtime, film.imdb, film.metacritic, film.cinemas, film.showings, film.next],
       open: path('film', film.id),
@@ -250,7 +282,7 @@ function filmsView(title = 'Films', filter: q.FilmFilter = {}): View {
         title: film.title,
         meta: [film.certificate || 'TBC', film.runtime ? `${film.runtime} min` : '', film.imdb ? `IMDb ${film.imdb.toFixed(1)}` : '', count(film.cinemas, 'cinema'), count(film.showings, 'showing')].filter(Boolean).join(' · '),
       },
-    }));
+    })));
     return local(columns, rows, ui);
   };
   return { title, table };
@@ -551,9 +583,12 @@ function back() {
   else go('');
 }
 
+let searching = 0;
+
 /** Build the page for a route. The search box lives here so that typing in it
  *  never replaces it; paint() then redraws only what a keystroke changes. */
 function render() {
+  clearTimeout(searching);
   const key = route();
   if (!uis.has(key)) uis.set(key, { order: null, descending: false, text: '', page: 0, selected: 0 });
   const ui = uis.get(key)!;
@@ -561,7 +596,14 @@ function render() {
   document.title = key ? `${view.title} · ODEON` : 'ODEON';
   const search = h('input', { type: 'search', placeholder: 'Search this table', 'aria-label': 'Search this table' }) as HTMLInputElement;
   search.value = ui.text;
-  search.oninput = () => { ui.text = search.value; ui.page = 0; ui.selected = 0; paint(); };
+  search.oninput = () => {
+    ui.text = search.value; ui.page = 0; ui.selected = 0;
+    clearTimeout(searching);
+    // Short lists are searched here at once. Showtimes are searched by the
+    // database, which waits for a pause so that it never holds up typing.
+    if (view.paged) searching = window.setTimeout(paint, 120);
+    else paint();
+  };
   const stamp = q.ingested(db);
   const hints = ['↑↓ move', 'Enter open', 'Esc back', '/ search', 's sort', 'n p pages', 'Space tick', 'h hide film', 'b book', 'c calendar'];
   app.replaceChildren(
@@ -668,9 +710,13 @@ function paint() {
 }
 
 function move(step: number) {
+  // Only the highlight moves: no query, and nothing is rebuilt.
   const { ui, table } = current;
+  const items = app.querySelectorAll('.scroll tbody tr, .scroll .cards li');
+  items[ui.selected]?.classList.remove('selected');
   ui.selected = Math.max(0, Math.min(table.rows.length - 1, ui.selected + step));
-  paint();
+  items[ui.selected]?.classList.add('selected');
+  if (!narrow.matches) items[ui.selected]?.scrollIntoView({ block: 'nearest' });
 }
 function turn(step: number) {
   const { ui, table } = current;

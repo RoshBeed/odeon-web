@@ -1,20 +1,15 @@
 import { readFileSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 import { beforeEach, describe, expect, test } from 'vitest';
+import { exportListings } from './export';
 import * as q from './queries';
 
-// The tables are the ingest's own, so a schema change that breaks a query fails here.
+// The tables are the ingest's own, so a schema change that breaks the export fails here.
 const store = readFileSync(new URL('../../ingest/src/odeon_ingest/store.py', import.meta.url), 'utf8');
 const SCHEMA = /SCHEMA = """([\s\S]*?)"""/.exec(store)![1];
 
 let sqlite: DatabaseSync;
-const db: q.Db = {
-  all: (sql, params = []) => {
-    const statement = sqlite.prepare(sql);
-    statement.setReturnArrays(true); // two columns may share a name
-    return statement.all(...(params as never[])) as unknown as unknown[][];
-  },
-};
+let db: q.Listings;
 // Wednesday 11 November 2026, 09:00 in London.
 const scope: q.Scope = { cinemas: [], hidden: [], now: '2026-11-11T09:00:00Z', today: '2026-11-11' };
 
@@ -44,6 +39,7 @@ beforeEach(() => {
   screening('155-1', '155', 'F1', '2026-11-11', '18:00', { experiences: '["IMAX"]', seating: '["Recliner Saver","Recliner","Premier"]' });
   screening('155-2', '155', 'F2', '2026-11-14', '12:00', { screen: 'The Lounge', screen_id: '155-L', sold_out: 1 });
   screening('001-1', '001', 'F1', '2026-11-20', '20:00', { screen: 'Screen 10', screen_id: '001-10' });
+  db = q.open(exportListings(sqlite));
 });
 
 describe('queries', () => {
@@ -160,6 +156,6 @@ describe('queries', () => {
   });
 
   test('the last successful ingest is reported', () => {
-    expect(q.ingested(db)).toBe('2026-11-10T05:00:00Z');
+    expect(db.ingested).toBe('2026-11-10T05:00:00Z');
   });
 });

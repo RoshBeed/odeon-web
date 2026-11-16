@@ -17,3 +17,4 @@ dist/
 *.sqlite
 *.sqlite-*
 *.sqlite.gz
+site/public/data/

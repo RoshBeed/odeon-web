@@ -649,7 +649,7 @@ function passed(segment: string, index: number, trail: string[]): HTMLElement {
   const list = cardList(table, ui.selected, (row) => {
     location.hash = writePage(place, { ...ui, selected: row }, trail.slice(0, index));
   });
-  return h('div', { class: 'column' }, h('h2', {}, view.title), ...(table.columns.length ? [list] : view.intro ? [view.intro] : []));
+  return h('div', { class: 'column' }, h('h2', {}, view.title), ...(table.columns.length ? [list] : []), ...(view.intro ? [view.intro] : []));
 }
 
 /** Show the highlighted row's page in the last column, before it is opened. */
@@ -668,12 +668,12 @@ function preview() {
   const shown = { ...table, rows: table.rows.slice(0, 50) };
   box.replaceChildren(
     h('h2', {}, view.title),
-    ...(view.intro ? [view.intro] : []),
     ...(table.columns.length ? [cardList(shown, -1, (index) => {
       noteNow();
       location.hash = writePage(target, { ...PLAIN, selected: index }, here());
     })] : []),
     ...(table.total > shown.rows.length ? [h('p', { class: 'dim' }, `and ${count(table.total - shown.rows.length, 'more row')}`)] : []),
+    ...(view.intro ? [view.intro] : []),
   );
 }
 function switchLayout() {
@@ -702,11 +702,12 @@ function render() {
   search.oninput = () => { ui.text = search.value; ui.page = 0; ui.selected = 0; paint(); };
   const stamp = db.ingested;
   const hints = ['↑↓ move', 'Enter open', 'Esc back', '/ search', 's sort', 'n p pages', 'Space tick', 'h hide film', 'b book', 'c calendar', 'v columns'];
-  const parts = [
-    ...(view.intro ? [view.intro] : []),
-    h('div', { class: 'tools' }, search, h('span', { class: 'sorter' }), h('span', { class: 'pager' })),
-    h('div', { class: 'scroll' }),
-  ];
+  const tools = h('div', { class: 'tools' }, search, h('span', { class: 'sorter' }), h('span', { class: 'pager' }));
+  const list = h('div', { class: 'scroll' });
+  // Every column starts with its list; a page's details and its search follow.
+  const parts = side
+    ? [list, ...(view.intro ? [view.intro] : []), tools]
+    : [...(view.intro ? [view.intro] : []), tools, list];
   app.classList.toggle('side', side);
   app.replaceChildren(
     h('header', {},

@@ -5,6 +5,8 @@
 export interface Data {
   /** When the listings were last fetched from ODEON, or null before the first ingest. */
   ingested: string | null;
+  /** The last day whose whole schedule is published; later days hold advance bookings only. */
+  fullUntil: string | null;
   cinemas: Cinema[];
   films: Film[];
   /** Which cinemas have announced which films: cinema ID, film ID. */
@@ -55,6 +57,7 @@ interface Show {
 
 export interface Listings {
   ingested: string | null;
+  fullUntil: string | null;
   films: Map<string, Film>;
   cinemas: Cinema[];
   availability: [string, string][];
@@ -88,6 +91,7 @@ export function open(data: Data): Listings {
   });
   return {
     ingested: data.ingested,
+    fullUntil: data.fullUntil,
     films,
     cinemas: data.cinemas,
     availability: data.availability,
@@ -117,6 +121,8 @@ export interface Showing {
   date: string;
   startsAt: string;
   time: string;
+  /** When the film itself ends. */
+  endsAt: string | null;
   title: string;
   cinema: string;
   screen: string;
@@ -417,7 +423,7 @@ export function showings(
     total: found.length,
     rows: found.slice(offset, offset + limit).map((show): Showing => ({
       cinemaId: show.cinemaId, id: show.id, filmId: show.filmId, date: show.date, startsAt: show.startsAt,
-      time: show.time, title: show.film!.title, cinema: show.cinema!.name, screen: show.screen,
+      time: show.time, endsAt: show.filmEndsAt, title: show.film!.title, cinema: show.cinema!.name, screen: show.screen,
       capacity: show.capacity, experiences: show.experiences, soldOut: show.soldOut,
     })),
   };
@@ -527,7 +533,7 @@ export function showing(l: Listings, cinemaId: string, id: string): ShowingDetai
   const show = l.byId.get(`${cinemaId}/${id}`);
   if (!show?.film || !show.cinema) return null;
   return {
-    cinemaId, id, filmId: show.filmId, date: show.date, startsAt: show.startsAt, time: show.time,
+    cinemaId, id, filmId: show.filmId, date: show.date, startsAt: show.startsAt, time: show.time, endsAt: show.filmEndsAt,
     title: show.film.title, cinema: show.cinema.name, screen: show.screen, capacity: show.capacity,
     experiences: show.experiences, soldOut: show.soldOut, filmStartsAt: show.filmStartsAt,
     filmEndsAt: show.filmEndsAt, runtime: show.film.runtime, seating: show.seating, address: show.cinema.address,

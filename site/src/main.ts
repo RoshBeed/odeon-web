@@ -30,6 +30,8 @@ interface Row {
   /** The film that `h` hides or shows again. */
   film?: string;
   sold?: boolean;
+  /** A heading drawn above the row in a list of cards: the day a run of showings is on. */
+  day?: string;
   /** Stays first on every page of its table, whatever the sort or search. */
   pinned?: boolean;
   /** How the row reads on a phone, when columns alone would not. */
@@ -45,6 +47,8 @@ interface View {
   intro?: Node;
   /** Rows for the current sort and search: the first `(ui.page + 1) * PAGE` of them. */
   table(ui: Ui): Table;
+  /** A short fixed list (the menu, the settings) that needs no search or sort. */
+  plain?: boolean;
   /** True when showings() sorts and searches (the showtimes tables). */
   paged?: boolean;
   /** Keys that act on the page itself, not on a row. */
@@ -229,7 +233,7 @@ function menuView(): View {
       { cells: ['Cinemas', count(home.allCinemas, 'cinema'), ticks.size ? `${count(ticks.size, 'cinema')} ticked` : 'all'], open: 'cinemas' },
       { cells: ['Location', count(places.size, 'location'), 'browse or tick cinema groups'], open: 'locations' },
       { cells: ['Tonight', count(home.tonight, 'screening'), count(home.tonightFilms, 'film')], open: 'tonight' },
-      { cells: ['This weekend', count(home.weekendShows, 'screening'), `${count(home.weekendFilms, 'film')} · ${day(first)} – ${day(last)}`], open: 'weekend' },
+      { cells: ['This weekend', count(home.weekendShows, 'screening'), `${count(home.weekendFilms, 'film')} · ${day(first)} – ${day(last)}${db.fullUntil && first > db.fullUntil ? ' · advance bookings only so far' : ''}`], open: 'weekend' },
       { cells: ['Opening soon', count(home.soon, 'film'), home.next ? `next: ${home.next.title} (${fullDate(home.next.release)})` : ''], open: 'soon' },
       { cells: ['Dates', count(home.days, 'day'), home.from ? `${day(home.from)} – ${fullDate(home.to)}` : ''], open: 'dates' },
       { cells: ['Screens', count(screens.length, 'screen'), 'by size, with formats'], open: 'screens' },
@@ -248,7 +252,7 @@ function menuView(): View {
     ];
   };
   const columns = [{ label: 'Browse' }, { label: 'How many' }, { label: 'Showing', wrap: true }];
-  return { title: 'Browse', table: (ui) => local(columns, rows(), ui) };
+  return { title: 'Browse', plain: true, table: (ui) => local(columns, rows(), ui) };
 }
 
 function filmsView(title = 'Films', filter: q.FilmFilter = {}): View {
@@ -314,7 +318,8 @@ function filmIntro(film: q.Film): Node {
   }
   if (film.metacritic !== null) pairs.push(['Metacritic', `${film.metacritic} / 100`]);
   if (named('Director')) pairs.push(['Director', named('Director')]);
-  if (named('Actor')) pairs.push(['Cast', named('Actor')]);
+  const cast = film.people.filter((p) => p.roles.includes('Actor')).map((p) => p.name);
+  if (cast.length) pairs.push(['Cast', cast.slice(0, 6).join(', ') + (cast.length > 6 ? ` and ${cast.length - 6} more` : '')]);
   if (film.distributor) pairs.push(['Distributor', film.distributor]);
   return h('div', { class: 'intro' },
     facts(pairs),
@@ -382,7 +387,7 @@ function settingsView(): View {
       }),
       copied),
   );
-  return { title: 'Settings', intro, table: (ui) => local(columns, rows(), ui) };
+  return { title: 'Settings', plain: true, intro, table: (ui) => local(columns, rows(), ui) };
 }
 
 function cinemasView(location?: string): View {
@@ -488,43 +493,57 @@ function screensView(): View {
 
 /** A showtimes table. Leaving a column out is for what the screen already fixes. */
 function showingsView(title: string, filter: q.ShowingFilter, within: q.Scope = scope()): View {
+  const ends = (row: q.Showing) => (row.endsAt ? TIME.format(new Date(row.endsAt)) : null);
   const all: (Column & { cell(row: q.Showing): Cell })[] = [
     { label: 'Date', order: 'date', cell: (row) => day(row.startsAt) },
     { label: 'Time', order: 'time', cell: (row) => row.time },
+    { label: 'Ends', cell: ends },
     { label: 'Film', order: 'film', wrap: true, cell: (row) => row.title },
     { label: 'Cinema', order: 'cinema', cell: (row) => shortCinema(row.cinema) },
     { label: 'Screen', order: 'screen', cell: (row) => row.screen.replace(/^Screen /, '') },
     { label: 'Seats', order: 'seats', right: true, cell: (row) => row.capacity },
     { label: 'Formats', wide: true, cell: (row) => formats(row.experiences) },
   ];
-  const columns = all.filter((column) => !(filter.film && column.label === 'Film') && !(filter.cinema && column.label === 'Cinema'));
+  // What the page already fixes is left out: its film, its cinema, its one day.
+  const oneDay = Boolean(filter.from && filter.from === filter.to);
+  const columns = all.filter((column) =>
+    !(filter.film && column.label === 'Film') && !(filter.cinema && column.label === 'Cinema') && !(oneDay && column.label === 'Date'));
   return {
     title,
     paged: true,
     table(ui) {
       const order = ui.order === null ? 'date' : (columns[ui.order].order ?? 'date');
       const found = q.showings(db, within, { ...filter, text: ui.text }, order, ui.descending, (ui.page + 1) * PAGE);
+      // In date order a list of cards is headed day by day, so the cards need not repeat the date.
+      const headed = order === 'date' && !oneDay;
+      const dated = !oneDay && !headed;
       return {
         columns,
         total: found.total,
-        rows: found.rows.map((row): Row => ({
-          cells: columns.map((column) => column.cell(row)),
-          open: path('show', row.cinemaId, row.id),
-          book: BOOKING + row.id,
-          calendar: () => addToCalendar(row.cinemaId, row.id),
-          sold: row.soldOut,
-          card: {
-            title: `${row.time}  ${filter.film ? day(row.startsAt) : row.title}`,
-            meta: [
-              filter.film ? '' : day(row.startsAt),
-              filter.cinema ? '' : shortCinema(row.cinema),
-              row.screen,
-              row.capacity ? `${row.capacity} seats` : '',
-              formats(row.experiences),
-              row.soldOut ? 'sold out' : '',
-            ].filter(Boolean).join(' · '),
-          },
-        })),
+        rows: found.rows.map((row, index): Row => {
+          const span = ends(row) ? `${row.time}–${ends(row)}` : row.time;
+          return {
+            cells: columns.map((column) => column.cell(row)),
+            open: path('show', row.cinemaId, row.id),
+            book: BOOKING + row.id,
+            calendar: () => addToCalendar(row.cinemaId, row.id),
+            sold: row.soldOut,
+            day: headed && row.date !== found.rows[index - 1]?.date
+              ? day(row.date) + (db.fullUntil && row.date > db.fullUntil ? ' · advance bookings only so far' : '')
+              : undefined,
+            card: {
+              title: filter.film ? span + (dated ? `  ${day(row.startsAt)}` : '') : `${span}  ${row.title}`,
+              meta: [
+                !filter.film && dated ? day(row.startsAt) : '',
+                filter.cinema ? '' : shortCinema(row.cinema),
+                row.screen,
+                row.capacity ? `${row.capacity} seats` : '',
+                formats(row.experiences),
+                row.soldOut ? 'sold out' : '',
+              ].filter(Boolean).join(' · '),
+            },
+          };
+        }),
       };
     },
   };
@@ -622,7 +641,7 @@ const route = () => readPage(location.hash).route;
 let current: {
   trail: string[]; route: string; view: View; ui: Ui; table: Table;
   /** Where the rows are drawn, and how one is made, so that more can be added. */
-  body?: HTMLElement; make?: (row: Row, index: number) => HTMLElement;
+  body?: HTMLElement; make?: (row: Row, index: number) => Node;
 };
 
 /** The sort, search, page and highlighted row go in the address too, so that a
@@ -688,8 +707,13 @@ function cardItem(columns: Column[], row: Row, index: number, selected: number, 
   card.onclick = () => pick(index);
   return card;
 }
+/** A row's card, under the day's heading when it begins a day. */
+function cardNodes(...card: Parameters<typeof cardItem>): Node[] {
+  const day = card[1].day;
+  return [...(day ? [h('li', { class: 'day' }, day)] : []), cardItem(...card)];
+}
 function cardList(table: Table, selected: number, pick: (index: number) => void): HTMLElement {
-  return h('ul', { class: 'cards' }, ...table.rows.map((row, index) => cardItem(table.columns, row, index, selected, pick)));
+  return h('ul', { class: 'cards' }, ...table.rows.flatMap((row, index) => cardNodes(table.columns, row, index, selected, pick)));
 }
 /** A column's heading line: its title, then whatever goes beside it. */
 const bar = (title: string, ...beside: Node[]) => h('div', { class: 'bar' }, h('h2', { title }, title), ...beside);
@@ -755,15 +779,23 @@ function render() {
   document.title = key ? `${view.title} · ODEON` : 'ODEON';
   const search = h('input', { type: 'search', placeholder: side ? 'Search' : 'Search this table', 'aria-label': 'Search this table' }) as HTMLInputElement;
   search.value = ui.text;
-  search.oninput = () => { ui.text = search.value; ui.page = 0; ui.selected = 0; paint(); };
+  search.oninput = () => {
+    ui.text = search.value; ui.page = 0; ui.selected = 0;
+    paint();
+    // Highlight the first match, not the All row above it, so that Enter opens what was searched for.
+    if (ui.text && current.table.rows[0]?.pinned && current.table.rows.length > 1) move(1);
+  };
   const stamp = db.ingested;
-  const hints = ['↑↓ move', 'Enter open', 'Esc back', '/ search', 's sort', 'Space tick', 'h hide film', 'b book', 'c calendar', 'v columns'];
+  const hints = ['↑↓ move', 'Enter open', 'Esc back', '/ search', 's sort', 'Space tick', 'h hide film', 't trailer', 'b book', 'c calendar', 'v columns'];
+  const old = stamp !== null && Date.now() - Date.parse(stamp) > 8 * 86400000;
   const tools = h('div', { class: 'tools' }, search, h('span', { class: 'sorter' }), h('span', { class: 'pager' }));
   const list = h('div', { class: 'scroll' });
   // A column is its heading line, with the search and sort in it, then its list, then any details.
   const parts = side
     ? [bar(view.title, tools), list, ...(view.intro ? [view.intro] : [])]
-    : [...(view.intro ? [view.intro] : []), tools, list];
+    : narrow.matches
+      ? [tools, list, ...(view.intro ? [view.intro] : [])] // on a phone the list comes first
+      : [...(view.intro ? [view.intro] : []), tools, list];
   app.classList.toggle('side', side);
   app.replaceChildren(
     h('header', {},
@@ -781,7 +813,10 @@ function render() {
         const [keys, ...words] = hint.split(' ');
         return [h('kbd', {}, keys), ` ${words.join(' ')}   `];
       })),
-      h('span', { class: 'status' }, `listings from ${stamp ? day(stamp) : 'no ingest yet'}`)),
+      h('span', { class: 'status' },
+        `listings from ${stamp ? day(stamp) : 'no ingest yet'}`,
+        ...(db.fullUntil ? [` · full to ${day(db.fullUntil)}`] : []),
+        ...(old ? [h('span', { class: 'stale' }, ' · more than a week old')] : []))),
   );
   current = { trail: side ? trail : [], route: key, view, ui, table: { columns: [], rows: [], total: 0 } };
   paint();
@@ -833,12 +868,16 @@ function paint() {
 
   let list: HTMLElement;
   let body: HTMLElement;
-  let make: (row: Row, index: number) => HTMLElement;
+  let make: (row: Row, index: number) => Node;
   if (narrow.matches || columns()) {
     // Phones: one card a row, the whole card a tap target that opens it.
     // Columns: a click highlights, which shows the row's page alongside.
     const pick = narrow.matches ? (index: number) => { ui.selected = index; open(); } : (index: number) => move(index - ui.selected);
-    make = (row, index) => cardItem(table.columns, row, index, ui.selected, pick, (boxed, at) => tickBox(boxed, at, 'span'));
+    make = (row, index) => {
+      const nodes = document.createDocumentFragment();
+      nodes.append(...cardNodes(table.columns, row, index, ui.selected, pick, (boxed, at) => tickBox(boxed, at, 'span')));
+      return nodes;
+    };
     list = body = h('ul', { class: 'cards' });
   } else {
     const head = h('tr', {}, ...(ticking ? [h('th', {})] : []), ...table.columns.map((column, index) => {
@@ -875,7 +914,7 @@ function paint() {
   flip.setAttribute('aria-label', 'Reverse the order');
   app.querySelector('.sorter')!.replaceChildren(...(sortable.length ? [sorter, flip] : []));
 
-  app.querySelector<HTMLElement>('.tools')!.hidden = !table.columns.length;
+  app.querySelector<HTMLElement>('.tools')!.hidden = !table.columns.length || Boolean(view.plain);
   app.querySelector('.pager')!.replaceChildren(
     h('span', { class: 'dim' }, columns() ? table.total.toLocaleString('en-GB') : count(table.total, 'row')));
   const rest = complete(table) ? null : h('p', { class: 'rest dim' }, 'more…');
@@ -895,7 +934,7 @@ function move(step: number) {
   const { ui } = current;
   // Moving past the last row drawn draws the next batch first.
   while (Number.isFinite(step) && ui.selected + step > current.table.rows.length - 1 && more());
-  const items = app.querySelectorAll('.scroll tbody tr, .scroll .cards li');
+  const items = app.querySelectorAll('.scroll tbody tr, .scroll .cards li:not(.day)');
   items[ui.selected]?.classList.remove('selected');
   ui.selected = Math.max(0, Math.min(current.table.rows.length - 1, ui.selected + step));
   items[ui.selected]?.classList.add('selected');
@@ -946,6 +985,7 @@ document.addEventListener('keydown', (event) => {
     Home: () => move(-Infinity), End: () => move(Infinity),
     Enter: open, ArrowRight: open, Escape: back, ArrowLeft: back, Backspace: back,
     ' ': tick, s: nextSort, v: switchLayout,
+    t: () => (['.focused', '.preview', '#app'].map((where) => document.querySelector<HTMLElement>(`${where} .trailer button`)).find(Boolean))?.click(),
     '/': () => app.querySelector<HTMLInputElement>('.tools input')?.focus(),
     b: () => { const row = selectedRow(); if (row?.book) window.open(row.book, '_blank', 'noopener'); },
     c: () => selectedRow()?.calendar?.(),

@@ -51,7 +51,12 @@ export function exportListings(sqlite: DatabaseSync, only?: Set<string>): Data {
     return main;
   });
   const film = (id: string) => merged.get(id) ?? id;
+  // ODEON publishes each Friday-to-Thursday week on a Tuesday. The ingest
+  // records the Tuesday whose week it holds; that week ends nine days later.
+  const [[week] = []] = all("SELECT value FROM state WHERE key = 'release_week'") as unknown as string[][];
+  const fullUntil = week ? new Date(Date.parse(week + 'T00:00:00Z') + 9 * 86400000).toISOString().slice(0, 10) : null;
   return {
+    fullUntil,
     ingested: all("SELECT max(finished_at) FROM runs WHERE source = 'odeon' AND status = 'ok'")[0][0],
     cinemas: all('SELECT id, name, stored, address FROM cinemas').map(([id, name, stored, address]) => ({
       id, name, stored: Boolean(stored), address: JSON.parse(address),

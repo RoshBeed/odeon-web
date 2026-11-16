@@ -34,6 +34,7 @@ beforeEach(() => {
     INSERT INTO screens VALUES ('155', '155-1', 300);
     INSERT INTO ratings VALUES ('F1', 'imdb', 8.4, 'tt1'), ('F1', 'metacritic', 74, NULL);
     INSERT INTO runs (source, started_at, finished_at, status) VALUES ('odeon', 'a', '2026-11-10T05:00:00Z', 'ok');
+    INSERT INTO state VALUES ('release_week', '2026-11-10');
   `);
   screening('155-0', '155', 'F1', '2026-11-11', '08:00'); // already started
   screening('155-1', '155', 'F1', '2026-11-11', '18:00', { experiences: '["IMAX"]', seating: '["Recliner Saver","Recliner","Premier"]' });
@@ -194,5 +195,7 @@ describe('queries', () => {
 
   test('the last successful ingest is reported', () => {
     expect(db.ingested).toBe('2026-11-10T05:00:00Z');
+    // The week published on Tuesday 10 November runs to Thursday 19.
+    expect(db.fullUntil).toBe('2026-11-19');
   });
 });

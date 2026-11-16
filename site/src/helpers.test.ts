@@ -59,18 +59,18 @@ test("Greater London's listings will do until a page is about another cinema", (
   expect(needsEveryCinema('', new Set(['155', '001']))).toBe(true);
 });
 
-test('a page carries its sort, search, page and row in the address', () => {
+test('a page carries its sort, search and row in the address', () => {
   const plain = { order: null, descending: false, text: '', page: 0, selected: 0 };
   expect(readPage('')).toEqual({ trail: [], route: '', ui: plain });
   expect(readPage('#/film/F1/155')).toEqual({ trail: [], route: 'film/F1/155', ui: plain });
-  const busy = { order: 3, descending: true, text: 'wick & co', page: 1, selected: 4 };
-  expect(writePage('films', busy)).toBe('#/films?sort=3&desc=1&q=wick%20%26%20co&page=2&row=5');
+  const busy = { order: 3, descending: true, text: 'wick & co', page: 2, selected: 204 };
+  expect(writePage('films', busy)).toBe('#/films?sort=3&desc=1&q=wick%20%26%20co&row=205');
   expect(readPage(writePage('films', busy))).toEqual({ trail: [], route: 'films', ui: busy });
   // The columns view: the pages that led here come first.
   expect(writePage('film/F1', plain, ['?row=2', 'films?sort=3'])).toBe('#/?row=2|films?sort=3|film/F1');
   expect(readPage('#/?row=2|films?sort=3|film/F1')).toEqual({ trail: ['?row=2', 'films?sort=3'], route: 'film/F1', ui: plain });
   expect(writePage('', plain)).toBe('#/');
-  expect(readPage('#/films?sort=x&page=-2&row=0').ui).toEqual({ ...plain, order: 0 });
+  expect(readPage('#/films?sort=x&row=0').ui).toEqual({ ...plain, order: 0 });
 });
 
 test('certificates sort by age, with unrated films last', () => {

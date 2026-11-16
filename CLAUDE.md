@@ -16,8 +16,9 @@
 - Keep ODEON traffic minimal: one ingest per release week, no retry loops, and never fetch
   per-screening live data. Tests use a fake ODEON.
 - There is no server and no secret in the site. Visitor choices (ticked cinemas, hidden films)
-  live in the page's address (`?cinemas=…&hidden=…`), and so does each page's sort, search,
-  page and highlighted row (`#/films?sort=3&page=2`). On a wide screen the pages
+  live in the page's address (`?cinemas=…&hidden=…`), and so does each page's sort, search
+  and highlighted row (`#/films?sort=3&row=12`). Lists have no pages: rows are drawn 100 at a
+  time as the reader scrolls or moves down. On a wide screen the pages
   show side by side, as Finder's column view does, and the pages that led here are listed in
   the address, separated by `|`; `?view=pages` shows one page at a time, as phones always do.
 - `#/` is the welcome page, `#/browse` the menu (always the first column). Each thing has one

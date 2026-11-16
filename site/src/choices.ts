@@ -24,18 +24,22 @@ export function needsEveryCinema(route: string, ticks: Set<string>): boolean {
   return name === 'film' && b !== undefined && b !== 'all' && !LONDON.has(b);
 }
 
+/** Lists are drawn this many rows at a time; more follow as the reader nears the end. */
+export const PAGE = 100;
+
 /** How one page is being looked at. */
 export interface Ui {
   /** The column sorted by, counted from 0; null for the page's own order. */
   order: number | null;
   descending: boolean;
   text: string;
+  /** How many further batches of rows have been drawn. Not in the address: enough for `selected`. */
   page: number;
   selected: number;
 }
 
 /** A page and how it is being looked at, from the address after the `#`:
- *  `#/films?sort=3&desc=1&q=wick&page=2&row=5`. Pages and rows count from 1 there.
+ *  `#/films?sort=3&desc=1&q=wick&row=5`. Rows count from 1 there.
  *  The columns view lists the pages that led here first, each written the same
  *  way and separated by `|`; those come back as `trail`. */
 export function readPage(hash: string): { trail: string[]; route: string; ui: Ui } {
@@ -53,7 +57,7 @@ export function readPage(hash: string): { trail: string[]; route: string; ui: Ui
       order: params.has('sort') ? number('sort', 0) : null,
       descending: params.get('desc') === '1',
       text: params.get('q') ?? '',
-      page: Math.max(number('page', 1), 1) - 1,
+      page: Math.floor((Math.max(number('row', 1), 1) - 1) / PAGE),
       selected: Math.max(number('row', 1), 1) - 1,
     },
   };
@@ -66,7 +70,6 @@ export function writePage(route: string, ui: Ui = PLAIN, trail: string[] = []): 
     ui.order === null ? '' : `sort=${ui.order}`,
     ui.descending ? 'desc=1' : '',
     ui.text ? `q=${encodeURIComponent(ui.text)}` : '',
-    ui.page ? `page=${ui.page + 1}` : '',
     ui.selected ? `row=${ui.selected + 1}` : '',
   ].filter(Boolean);
   return '#/' + [...trail, route + (parts.length ? '?' + parts.join('&') : '')].join('|');

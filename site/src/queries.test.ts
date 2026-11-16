@@ -179,6 +179,9 @@ describe('queries', () => {
     expect(q.showings(db, quiet, {}).total).toBe(4);
     expect(q.home(db, quiet).showings).toBe(4);
     expect(q.cinemas(db, quiet).map((cinema) => cinema.showings)).toEqual([2, 2]);
+    // The film is an event at cinema 001 too, though only cinema 155's showings carry the tag.
+    const some = q.open(exportListings(sqlite, new Set(['001'])));
+    expect(q.films(some, quiet).map((film) => film.id)).toEqual(['F1']);
   });
 
   test('listings for some cinemas keep every cinema and film, but only their showings', () => {

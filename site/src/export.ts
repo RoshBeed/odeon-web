@@ -1,7 +1,7 @@
 // Turns the ingest's SQLite file into the one JSON document the site reads.
 // Runs in Node when the site is built (scripts/export.ts) and in the tests.
 import type { DatabaseSync } from 'node:sqlite';
-import type { Data } from './queries';
+import type { Data, Film } from './queries';
 
 export function exportListings(sqlite: DatabaseSync): Data {
   // Most of a showing repeats in others (its cinema, film, date, formats),
@@ -18,30 +18,52 @@ export function exportListings(sqlite: DatabaseSync): Data {
     statement.setReturnArrays(true); // two columns may share a name
     return statement.all() as unknown as never[][];
   };
+  // ODEON lists a film once for the UK and once for Ireland, under two IDs.
+  // Titles that match once case and punctuation are set aside become one film:
+  // the edition with the most showings, which borrows any rating it lacks.
+  const editions = new Map<string, Film[]>();
+  const showings = new Map(all('SELECT film_id, count(*) FROM screenings GROUP BY film_id') as unknown as [string, number][]);
+  for (const film of all(
+    `SELECT f.id, f.title, f.runtime, f.certificate, f.release_date, f.genres, f.people,
+            f.distributor, f.synopsis, f.trailer_url, imdb.score, imdb.external_id, mc.score
+     FROM films f
+     LEFT JOIN ratings imdb ON imdb.film_id = f.id AND imdb.source = 'imdb'
+     LEFT JOIN ratings mc ON mc.film_id = f.id AND mc.source = 'metacritic'
+     ORDER BY f.id`,
+  ).map(([id, title, runtime, certificate, release, genres, people, distributor, synopsis, trailer, imdb, imdbId, metacritic]): Film => ({
+    id, title, runtime, certificate, release, distributor, synopsis, trailer, imdb, imdbId, metacritic,
+    genres: JSON.parse(genres),
+    people: JSON.parse(people),
+  }))) {
+    const key = film.title.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '') || film.id;
+    editions.set(key, [...(editions.get(key) ?? []), film]);
+  }
+  const merged = new Map<string, string>();
+  const films = [...editions.values()].map((group) => {
+    const main = group.reduce((best, film) => ((showings.get(film.id) ?? 0) > (showings.get(best.id) ?? 0) ? film : best));
+    for (const film of group) {
+      merged.set(film.id, main.id);
+      main.imdb ??= film.imdb;
+      main.imdbId ??= film.imdbId;
+      main.metacritic ??= film.metacritic;
+    }
+    return main;
+  });
+  const film = (id: string) => merged.get(id) ?? id;
   return {
     ingested: all("SELECT max(finished_at) FROM runs WHERE source = 'odeon' AND status = 'ok'")[0][0],
     cinemas: all('SELECT id, name, stored, address FROM cinemas').map(([id, name, stored, address]) => ({
       id, name, stored: Boolean(stored), address: JSON.parse(address),
     })),
-    films: all(
-      `SELECT f.id, f.title, f.runtime, f.certificate, f.release_date, f.genres, f.people,
-              f.distributor, f.synopsis, f.trailer_url, imdb.score, imdb.external_id, mc.score
-       FROM films f
-       LEFT JOIN ratings imdb ON imdb.film_id = f.id AND imdb.source = 'imdb'
-       LEFT JOIN ratings mc ON mc.film_id = f.id AND mc.source = 'metacritic'`,
-    ).map(([id, title, runtime, certificate, release, genres, people, distributor, synopsis, trailer, imdb, imdbId, metacritic]) => ({
-      id, title, runtime, certificate, release, distributor, synopsis, trailer, imdb, imdbId, metacritic,
-      genres: JSON.parse(genres),
-      people: JSON.parse(people),
-    })),
-    availability: all('SELECT cinema_id, film_id FROM availability') as unknown as Data['availability'],
+    films,
+    availability: all('SELECT cinema_id, film_id FROM availability').map(([cinema, id]): [string, string] => [cinema, film(id)]),
     screens: all('SELECT cinema_id, screen_id, capacity FROM screens') as unknown as Data['screens'],
     // In the order the site lists them, which it relies on.
     rows: all(
       `SELECT cinema_id, id, film_id, business_date, starts_at, time, film_starts_at, film_ends_at,
               screen, screen_id, experiences, seating, sold_out
        FROM screenings ORDER BY starts_at, cinema_id, id`,
-    ).map((row) => row.map((value, column) => number(column === 10 || column === 11 ? JSON.parse(value) : value))),
+    ).map((row) => row.map((value, column) => number(column === 2 ? film(value) : column === 10 || column === 11 ? JSON.parse(value) : value))),
     values,
   };
 }

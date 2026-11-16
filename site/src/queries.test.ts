@@ -155,6 +155,32 @@ describe('queries', () => {
     expect(q.showing(db, '155', 'gone')).toBeNull();
   });
 
+  test('editions of one film are merged, and event cinema can be left out', () => {
+    sqlite.exec(`
+      INSERT INTO films VALUES ('F1-IE', 'DUNE ', 150, '12', '2026-11-06', '[]', '[]', 'Warner IR', '', NULL),
+                               ('F4', 'Live: Opera!', 180, '', '2026-11-01', '[]', '[]', '', '', NULL),
+                               ('F4-IE', 'Live Opera', 180, '', '2026-11-01', '[]', '[]', '', '', NULL);
+      INSERT INTO ratings VALUES ('F4-IE', 'imdb', 7.1, 'tt4');
+      INSERT INTO availability VALUES ('001', 'F1-IE', '["NowShowing"]');
+    `);
+    screening('001-2', '001', 'F1-IE', '2026-11-21', '20:00');
+    screening('155-3', '155', 'F4', '2026-11-12', '19:00', { experiences: '["Event Cinema"]' });
+    screening('155-4', '155', 'F4', '2026-11-13', '19:00', { experiences: '["Event Cinema"]' });
+    screening('001-3', '001', 'F4-IE', '2026-11-12', '19:00', { experiences: '["Event Cinema"]' });
+    db = q.open(exportListings(sqlite));
+    expect(q.films(db, scope).map((film) => [film.id, film.title, film.showings, film.imdb])).toEqual([
+      ['F1', 'Dune', 3, 8.4],
+      ['F4', 'Live: Opera!', 3, 7.1],
+      ['F2', 'Paddington', 1, null],
+    ]);
+    expect(q.film(db, 'F1-IE')).toBeNull();
+    const quiet = { ...scope, noEvents: true };
+    expect(q.films(db, quiet).map((film) => film.id)).toEqual(['F1', 'F2']);
+    expect(q.showings(db, quiet, {}).total).toBe(4);
+    expect(q.home(db, quiet).showings).toBe(4);
+    expect(q.cinemas(db, quiet).map((cinema) => cinema.showings)).toEqual([2, 2]);
+  });
+
   test('the last successful ingest is reported', () => {
     expect(db.ingested).toBe('2026-11-10T05:00:00Z');
   });

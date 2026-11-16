@@ -58,6 +58,8 @@ export interface Listings {
   availability: [string, string][];
   /** Every showing, in the order of `Data.rows`. */
   shows: Show[];
+  /** Films with a showing tagged Event Cinema. */
+  events: Set<string>;
   /** Showings by cinema ID and ID; made the first time one is asked for. */
   byId?: Map<string, Show>;
 }
@@ -88,6 +90,7 @@ export function open(data: Data): Listings {
     cinemas: data.cinemas,
     availability: data.availability,
     shows,
+    events: new Set(shows.filter(isEvent).map((show) => show.filmId)),
   };
 }
 
@@ -101,6 +104,8 @@ export interface Scope {
   now: string;
   /** Today's date in London. */
   today: string;
+  /** Leave out what ODEON tags Event Cinema: concerts, theatre, opera and the like. */
+  noEvents?: boolean;
 }
 
 export interface Showing {
@@ -150,6 +155,8 @@ const by = <T>(...keys: ((item: T) => string | number)[]) => (a: T, b: T) => {
   return 0;
 };
 
+const isEvent = (show: Show) => show.experiences.includes('Event Cinema');
+
 /** Showings that have not started; with `scoped`, only the visitor's cinemas, less their hidden films. */
 function upcoming(l: Listings, scope: Scope, scoped = true): Show[] {
   // The showings are in start order, so the first one still to come is found by halving.
@@ -159,7 +166,7 @@ function upcoming(l: Listings, scope: Scope, scoped = true): Show[] {
     if (l.shows[middle].startsAt > scope.now) high = middle;
     else low = middle + 1;
   }
-  const rest = l.shows.slice(low);
+  const rest = scope.noEvents ? l.shows.slice(low).filter((show) => !isEvent(show)) : l.shows.slice(low);
   if (!scoped || (!scope.cinemas.length && !scope.hidden.length)) return rest;
   const ticked = new Set(scope.cinemas);
   const hidden = new Set(scope.hidden);
@@ -317,6 +324,7 @@ export function soon(l: Listings, scope: Scope): SoonRow[] {
     const film = l.films.get(filmId);
     if (!film?.release || film.release <= scope.today) continue;
     if ((ticked.size && !ticked.has(cinemaId)) || hidden.has(filmId)) continue;
+    if (scope.noEvents && l.events.has(filmId)) continue;
     if (!found.has(film)) found.set(film, new Set());
     found.get(film)!.add(cinemaId);
   }

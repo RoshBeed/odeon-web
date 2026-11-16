@@ -1,0 +1,109 @@
+import { readFileSync } from 'node:fs';
+import { DatabaseSync } from 'node:sqlite';
+import { beforeEach, describe, expect, test } from 'vitest';
+import * as q from './queries';
+
+// The tables are the ingest's own, so a schema change that breaks a query fails here.
+const store = readFileSync(new URL('../../ingest/src/odeon_ingest/store.py', import.meta.url), 'utf8');
+const SCHEMA = /SCHEMA = """([\s\S]*?)"""/.exec(store)![1];
+
+let sqlite: DatabaseSync;
+const db: q.Db = {
+  all: (sql, params = []) => {
+    const statement = sqlite.prepare(sql);
+    statement.setReturnArrays(true); // two columns may share a name
+    return statement.all(...(params as never[])) as unknown as unknown[][];
+  },
+};
+// Wednesday 11 November 2026, 09:00 in London.
+const scope: q.Scope = { cinemas: [], now: '2026-11-11T09:00:00Z', today: '2026-11-11' };
+
+function screening(id: string, cinema: string, film: string, date: string, time: string, extra: Partial<Record<string, unknown>> = {}) {
+  const row = { screen: 'Screen 1', screen_id: `${cinema}-1`, experiences: '[]', sold_out: 0, ...extra };
+  sqlite
+    .prepare('INSERT INTO screenings VALUES (?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?, ?, ?, ?)')
+    .run(cinema, id, film, date, `${date}T${time}:00Z`, time, row.screen as string, row.screen_id as string, row.experiences as string, '[]', row.sold_out as number);
+}
+
+beforeEach(() => {
+  sqlite = new DatabaseSync(':memory:');
+  sqlite.exec(SCHEMA);
+  sqlite.exec(`
+    INSERT INTO cinemas VALUES ('155', 'London West End', 1, '{"city":"London"}', 51.5, -0.1),
+                               ('001', 'Aberdeen', 1, '{}', NULL, NULL);
+    INSERT INTO films VALUES ('F1', 'Dune', 155, '12A', '2026-11-06', '["Sci-Fi"]',
+                              '[{"name":"Denis Villeneuve","roles":["Director"]}]', 'Warner', 'Sand.', NULL),
+                             ('F2', 'Paddington', 100, 'PG', '2026-10-01', '[]', '[]', '', '', NULL),
+                             ('F3', 'Later', NULL, '', '2026-12-25', '[]', '[]', '', '', NULL);
+    INSERT INTO availability VALUES ('155', 'F3', '["ComingSoon"]'), ('155', 'F1', '["NowShowing"]');
+    INSERT INTO screens VALUES ('155', '155-1', 300);
+    INSERT INTO ratings VALUES ('F1', 'imdb', 8.4, 'tt1'), ('F1', 'metacritic', 74, NULL);
+    INSERT INTO runs (source, started_at, finished_at, status) VALUES ('odeon', 'a', '2026-11-10T05:00:00Z', 'ok');
+  `);
+  screening('155-0', '155', 'F1', '2026-11-11', '08:00'); // already started
+  screening('155-1', '155', 'F1', '2026-11-11', '18:00', { experiences: '["IMAX"]' });
+  screening('155-2', '155', 'F2', '2026-11-14', '12:00', { screen: 'The Lounge', screen_id: '155-L', sold_out: 1 });
+  screening('001-1', '001', 'F1', '2026-11-20', '20:00', { screen: 'Screen 10', screen_id: '001-10' });
+});
+
+describe('queries', () => {
+  test('the weekend is Friday to Sunday, or what is left of it', () => {
+    expect(q.weekend('2026-11-11')).toEqual(['2026-11-13', '2026-11-15']);
+    expect(q.weekend('2026-11-14')).toEqual(['2026-11-14', '2026-11-15']);
+  });
+
+  test('home counts only what has not started', () => {
+    const home = q.home(db, scope);
+    expect([home.films, home.showings, home.cinemas, home.tonight, home.weekendShows]).toEqual([2, 3, 2, 1, 1]);
+    expect([home.days, home.from, home.to, home.soon, home.next?.title]).toEqual([3, '2026-11-11', '2026-11-20', 1, 'Later']);
+  });
+
+  test('ticked cinemas narrow every count', () => {
+    const ticked = { ...scope, cinemas: ['001'] };
+    expect(q.home(db, ticked).showings).toBe(1);
+    expect(q.films(db, ticked).map((film) => film.title)).toEqual(['Dune']);
+    expect(q.soon(db, ticked)).toEqual([]);
+    expect(q.dates(db, ticked)).toEqual([{ date: '2026-11-20', films: 1, showings: 1 }]);
+    expect(q.showings(db, ticked, {}).total).toBe(1);
+  });
+
+  test('films carry ratings, cinema counts and their next showing', () => {
+    expect(q.films(db, scope)[0]).toEqual({
+      id: 'F1', title: 'Dune', certificate: '12A', runtime: 155, release: '2026-11-06',
+      imdb: 8.4, metacritic: 74, cinemas: 2, showings: 2, next: '2026-11-11T18:00:00Z',
+    });
+    const film = q.film(db, 'F1')!;
+    expect([film.genres, film.people[0].name, film.imdbId]).toEqual([['Sci-Fi'], 'Denis Villeneuve', 'tt1']);
+    expect(q.film(db, 'nope')).toBeNull();
+  });
+
+  test('cinemas list every stored cinema, or those showing one film', () => {
+    expect(q.cinemas(db, scope).map((c) => [c.name, c.city, c.films, c.showings])).toEqual([
+      ['Aberdeen', '', 1, 1],
+      ['London West End', 'London', 2, 2],
+    ]);
+    expect(q.cinemas(db, scope, 'F2').map((c) => c.id)).toEqual(['155']);
+  });
+
+  test('showtimes filter, search, sort and page', () => {
+    const ids = (filter: q.ShowingFilter, order = 'date', descending = false) =>
+      q.showings(db, scope, filter, order, descending).rows.map((row) => row.id);
+    expect(ids({})).toEqual(['155-1', '155-2', '001-1']);
+    expect(ids({ from: '2026-11-13', to: '2026-11-15' })).toEqual(['155-2']);
+    expect(ids({ film: 'F1', cinema: '155' })).toEqual(['155-1']);
+    expect(ids({ text: 'IMAX' })).toEqual(['155-1']);
+    expect(ids({ text: 'aberdeen' })).toEqual(['001-1']);
+    // Screen 1, Screen 10, then the named screen.
+    expect(ids({}, 'screen')).toEqual(['155-1', '001-1', '155-2']);
+    expect(ids({}, 'screen', true)).toEqual(['155-2', '001-1', '155-1']);
+    expect(ids({}, 'seats')[0]).toBe('155-1');
+    expect(ids({}, 'film', true)[0]).toBe('155-2');
+    const page = q.showings(db, scope, {}, 'date', false, 1, 1);
+    expect([page.total, page.rows[0].id, page.rows[0].soldOut, page.rows[0].capacity]).toEqual([3, '155-2', true, null]);
+    expect(q.showings(db, scope, {}).rows[0]).toMatchObject({ experiences: ['IMAX'], capacity: 300, cinema: 'London West End' });
+  });
+
+  test('the last successful ingest is reported', () => {
+    expect(q.ingested(db)).toBe('2026-11-10T05:00:00Z');
+  });
+});

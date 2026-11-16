@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+*.egg-info/
+.ruff_cache/
+
+# Node
+node_modules/
+dist/
+
+# Secrets
+.env*
+!.env.example
+
+# The listings are published as a release asset, never committed.
+*.sqlite
+*.sqlite-*
+*.sqlite.gz

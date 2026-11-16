@@ -193,6 +193,22 @@ describe('queries', () => {
     expect(q.film(some, 'F2')?.title).toBe('Paddington');
   });
 
+  test('double bills are the films that end just before or start just after', () => {
+    const timed = (id: string, film: string, start: string, end: string) => sqlite
+      .prepare("INSERT INTO screenings VALUES ('155', ?, ?, '2026-11-12', ?, ?, ?, ?, 'Screen 1', '155-1', '[]', '[]', 0)")
+      .run(id, film, `2026-11-12T${start}:00Z`, start, `2026-11-12T${start}:00Z`, `2026-11-12T${end}:00Z`);
+    timed('A', 'F1', '18:00', '20:30');
+    timed('B', 'F2', '20:50', '22:30'); // 20 minutes after A ends
+    timed('C', 'F2', '21:30', '23:10'); // an hour after: too long a wait
+    timed('D', 'F1', '20:40', '23:10'); // the same film
+    timed('E', 'F2', '16:00', '17:40'); // ends 20 minutes before A starts
+    db = q.open(exportListings(sqlite));
+    const near = q.around(db, scope, '155', 'A');
+    expect(near.after.map((row) => [row.id, row.gap])).toEqual([['B', 20]]);
+    expect(near.before.map((row) => [row.id, row.gap])).toEqual([['E', 20]]);
+    expect(q.around(db, { ...scope, hidden: ['F2'] }, '155', 'A').after).toEqual([]);
+  });
+
   test('the last successful ingest is reported', () => {
     expect(db.ingested).toBe('2026-11-10T05:00:00Z');
     // The week published on Tuesday 10 November runs to Thursday 19.

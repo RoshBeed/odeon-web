@@ -421,12 +421,37 @@ export function showings(
   if (sort !== 'date' || descending) found.sort((SHOWING_ORDERS[sort] ?? SHOWING_ORDERS.date)(descending ? -1 : 1));
   return {
     total: found.length,
-    rows: found.slice(offset, offset + limit).map((show): Showing => ({
-      cinemaId: show.cinemaId, id: show.id, filmId: show.filmId, date: show.date, startsAt: show.startsAt,
-      time: show.time, endsAt: show.filmEndsAt, title: show.film!.title, cinema: show.cinema!.name, screen: show.screen,
-      capacity: show.capacity, experiences: show.experiences, soldOut: show.soldOut,
-    })),
+    rows: found.slice(offset, offset + limit).map(asShowing),
   };
+}
+
+const asShowing = (show: Show): Showing => ({
+  cinemaId: show.cinemaId, id: show.id, filmId: show.filmId, date: show.date, startsAt: show.startsAt,
+  time: show.time, endsAt: show.filmEndsAt, title: show.film!.title, cinema: show.cinema!.name, screen: show.screen,
+  capacity: show.capacity, experiences: show.experiences, soldOut: show.soldOut,
+});
+
+export interface Neighbour extends Showing {
+  /** Minutes between one film ending and the other's advertised start. */
+  gap: number;
+}
+
+/** Double bills: other films at the same cinema that end shortly before this
+ *  showing starts, or start shortly after its film ends. */
+export function around(l: Listings, scope: Scope, cinemaId: string, id: string, within = 45): { before: Neighbour[]; after: Neighbour[] } {
+  l.byId ??= new Map(l.shows.map((show) => [`${show.cinemaId}/${show.id}`, show]));
+  const here = l.byId.get(`${cinemaId}/${id}`);
+  const [before, after]: Neighbour[][] = [[], []];
+  if (!here) return { before, after };
+  const minutes = (from: string, to: string) => Math.round((Date.parse(to) - Date.parse(from)) / 60000);
+  for (const show of upcoming(l, { ...scope, cinemas: [cinemaId] })) {
+    if (show.filmId === here.filmId || !show.film || !show.cinema) continue;
+    const wait = here.filmEndsAt ? minutes(here.filmEndsAt, show.startsAt) : -1;
+    if (wait >= 0 && wait <= within) after.push({ ...asShowing(show), gap: wait });
+    const lead = show.filmEndsAt ? minutes(show.filmEndsAt, here.startsAt) : -1;
+    if (lead >= 0 && lead <= within) before.push({ ...asShowing(show), gap: lead });
+  }
+  return { before, after };
 }
 
 export interface TagRow {

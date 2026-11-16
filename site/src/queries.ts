@@ -339,7 +339,7 @@ export function tags(db: Db, scope: Scope, kind: 'experiences' | 'seating'): Tag
   const name = kind === 'seating' ? SEAT : 'je.value';
   return db
     .all(
-      `SELECT ${name}, count(DISTINCT s.cinema_id || '/' || s.id), count(DISTINCT s.film_id),
+      `SELECT ${name}, count(DISTINCT s.rowid), count(DISTINCT s.film_id),
               count(DISTINCT s.cinema_id)
        FROM screenings s, json_each(s.${kind}) je
        WHERE ${where} AND ${UPCOMING} GROUP BY 1 ORDER BY 2 DESC, 1`,

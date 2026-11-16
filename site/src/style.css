@@ -20,7 +20,7 @@ a { color: inherit; }
 header { display: flex; gap: 12px; align-items: baseline; padding: 14px 0 10px; border-bottom: 1px solid var(--line); }
 header h1 { font-size: 1rem; margin: 0; font-weight: 600; }
 header h1 span { color: var(--dim); font-weight: 400; }
-header a.back { color: var(--accent); text-decoration: none; }
+header a, header button { color: var(--accent); text-decoration: none; background: none; border: 0; font: inherit; padding: 0; cursor: pointer; }
 
 .intro { padding: 14px 0 4px; max-width: 80ch; }
 .intro p { margin: 0 0 8px; }
@@ -28,12 +28,15 @@ header a.back { color: var(--accent); text-decoration: none; }
 .intro dt { color: var(--accent); }
 .intro dd { margin: 0; }
 .dim { color: var(--dim); }
+.phone { display: none; }
 
 .tools { display: flex; gap: 12px; align-items: center; padding: 10px 0; flex-wrap: wrap; }
 .tools input { flex: 1 1 220px; background: var(--panel); border: 1px solid var(--line); color: var(--text); font: inherit; padding: 6px 8px; border-radius: 3px; }
 .tools input:focus { outline: 1px solid var(--select); }
 .tools[hidden] { display: none; }
 .pager { display: flex; gap: 8px; align-items: center; }
+.tools select { background: var(--panel); border: 1px solid var(--line); color: var(--text); font: inherit; padding: 5px 6px; border-radius: 3px; }
+.sorter { display: none; gap: 6px; }
 .tools button { background: var(--panel); border: 1px solid var(--line); color: var(--text); font: inherit; padding: 5px 10px; border-radius: 3px; cursor: pointer; }
 .tools button:disabled { color: var(--dim); cursor: default; }
 
@@ -49,15 +52,41 @@ tbody tr { cursor: pointer; }
 tbody tr:nth-child(even) { background: #10151b; }
 tbody tr.selected { background: var(--select); color: #fff; }
 tbody tr.selected .dim { color: #cfe2f7; }
-td.tick { width: 1%; color: var(--accent); }
+.tick { width: 1%; color: var(--accent); cursor: pointer; }
 .sold { text-decoration: line-through; }
 .empty { padding: 24px 6px; color: var(--dim); }
 
 footer { position: fixed; left: 0; right: 0; bottom: 0; background: var(--panel); border-top: 1px solid var(--line); padding: 6px 16px; color: var(--dim); display: flex; gap: 16px; flex-wrap: wrap; justify-content: space-between; }
 footer kbd { color: var(--accent); font: inherit; }
 
+.actions { display: flex; gap: 10px; flex-wrap: wrap; margin: 12px 0 4px; }
+.actions a, .actions button { background: var(--panel); border: 1px solid var(--line); color: var(--text); font: inherit; padding: 8px 12px; border-radius: 3px; cursor: pointer; text-decoration: none; }
+.actions a:first-child { border-color: var(--accent); color: var(--accent); }
+.intro dd a { color: var(--accent); }
+
+.cards { list-style: none; margin: 0; padding: 0; }
+.cards li { display: flex; gap: 12px; align-items: center; padding: 11px 6px; border-bottom: 1px solid var(--line); cursor: pointer; }
+.cards .text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.cards strong { font-weight: 600; overflow-wrap: anywhere; white-space: pre-wrap; }
+.cards .tick { width: auto; padding: 8px 4px; font-size: 1.1rem; }
+.cards .go { font-size: 1.3rem; }
+.cards li.sold strong { text-decoration: line-through; }
+
 @media (max-width: 640px) {
-  :root { font-size: 13px; }
-  .wide { display: none; }
+  :root { font-size: 15px; }
+  #app { padding: 0 12px 56px; }
+  header { flex-wrap: wrap; gap: 6px 14px; }
+  header h1 { flex-basis: 100%; overflow-wrap: anywhere; }
+  .intro dl { grid-template-columns: 1fr; gap: 0; }
+  .phone { display: block; }
+  .phone + dl { display: none; }
+  .intro dd { margin-bottom: 6px; }
+  .tools input { flex-basis: 100%; padding: 9px 10px; }
+  .tools select, .tools button { padding: 8px 10px; }
+  .sorter { display: flex; }
+  .pager { margin-left: auto; }
   footer .keys { display: none; }
+}
+@media (min-width: 641px) and (max-width: 900px) {
+  .wide, footer .keys { display: none; }
 }

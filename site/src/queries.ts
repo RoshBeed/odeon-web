@@ -9,6 +9,8 @@ export interface Db {
 export interface Scope {
   /** Ticked cinema IDs; empty means every cinema. */
   cinemas: string[];
+  /** Films the visitor has hidden. */
+  hidden: string[];
   /** Now, as stored times are written: UTC, `2026-11-16T18:00:00Z`. */
   now: string;
   /** Today's date in London. */
@@ -35,16 +37,44 @@ export interface ShowingFilter {
   to?: string;
   film?: string;
   cinema?: string;
+  /** A screen's ID, within `cinema`. */
+  screen?: string;
+  /** A format or language tag exactly as ODEON names it. */
+  tag?: string;
+  /** A seat type, without its price tier. */
+  seat?: string;
   text?: string;
+}
+
+export interface FilmFilter {
+  certificate?: string;
+  genre?: string;
+  person?: string;
+  distributor?: string;
 }
 
 const UPCOMING = 's.starts_at > ?';
 
-function scoped(scope: Scope, column = 's.cinema_id'): [string, unknown[]] {
-  return scope.cinemas.length
-    ? [`${column} IN (SELECT value FROM json_each(?))`, [JSON.stringify(scope.cinemas)]]
-    : ['1', []];
+/** The visitor's cinemas, less their hidden films, as a WHERE clause. */
+function scoped(scope: Scope, cinema = 's.cinema_id', film = 's.film_id'): [string, unknown[]] {
+  const clauses = ['1'];
+  const params: unknown[] = [];
+  if (scope.cinemas.length) {
+    clauses.push(`${cinema} IN (SELECT value FROM json_each(?))`);
+    params.push(JSON.stringify(scope.cinemas));
+  }
+  if (scope.hidden.length) {
+    clauses.push(`${film} NOT IN (SELECT value FROM json_each(?))`);
+    params.push(JSON.stringify(scope.hidden));
+  }
+  return [clauses.join(' AND '), params];
 }
+
+// ODEON prices one seat type in tiers ("Recliner Saver"); the type is what matters.
+const SEAT = `CASE WHEN je.value LIKE '% Saver' THEN substr(je.value, 1, length(je.value) - 6)
+                   WHEN je.value LIKE '% Popular' THEN substr(je.value, 1, length(je.value) - 8)
+                   ELSE je.value END`;
+const CERTIFICATE = "coalesce(nullif(f.certificate, ''), 'TBC')";
 
 /** Friday to Sunday of this week; from today when the weekend has begun. */
 export function weekend(today: string): [string, string] {
@@ -98,8 +128,18 @@ const RATINGS = `
   LEFT JOIN ratings imdb ON imdb.film_id = f.id AND imdb.source = 'imdb'
   LEFT JOIN ratings mc ON mc.film_id = f.id AND mc.source = 'metacritic'`;
 
-export function films(db: Db, scope: Scope): FilmRow[] {
-  const [where, params] = scoped(scope);
+export function films(db: Db, scope: Scope, filter: FilmFilter = {}): FilmRow[] {
+  const [scopeWhere, params] = scoped(scope);
+  const clauses = [scopeWhere];
+  const add = (clause: string, value: unknown) => {
+    clauses.push(clause);
+    params.push(value);
+  };
+  if (filter.certificate) add(`${CERTIFICATE} = ?`, filter.certificate);
+  if (filter.genre) add('EXISTS (SELECT 1 FROM json_each(f.genres) WHERE value = ?)', filter.genre);
+  if (filter.person) add("EXISTS (SELECT 1 FROM json_each(f.people) WHERE value->>'name' = ?)", filter.person);
+  if (filter.distributor) add('f.distributor = ?', filter.distributor);
+  const where = clauses.join(' AND ');
   return db
     .all(
       `SELECT f.id, f.title, f.certificate, f.runtime, f.release_date, imdb.score, mc.score,
@@ -182,7 +222,7 @@ export interface SoonRow {
 
 /** Films not yet released that the scoped cinemas have announced. */
 export function soon(db: Db, scope: Scope): SoonRow[] {
-  const [where, params] = scoped(scope, 'a.cinema_id');
+  const [where, params] = scoped(scope, 'a.cinema_id', 'a.film_id');
   return db
     .all(
       `SELECT f.id, f.title, f.certificate, f.release_date, count(DISTINCT a.cinema_id)
@@ -246,6 +286,9 @@ export function showings(
   if (filter.to) add('s.business_date <= ?', filter.to);
   if (filter.film) add('s.film_id = ?', filter.film);
   if (filter.cinema) add('s.cinema_id = ?', filter.cinema);
+  if (filter.screen) add('s.screen_id = ?', filter.screen);
+  if (filter.tag) add('EXISTS (SELECT 1 FROM json_each(s.experiences) WHERE value = ?)', filter.tag);
+  if (filter.seat) add(`EXISTS (SELECT 1 FROM json_each(s.seating) je WHERE ${SEAT} = ?)`, filter.seat);
   if (filter.text)
     add(
       `instr(lower(f.title || ' ' || c.name || ' ' || s.screen || ' ' || s.time || ' ' || s.experiences), ?) > 0`,
@@ -281,4 +324,132 @@ export function ingested(db: Db): string | null {
   return db.all("SELECT max(finished_at) FROM runs WHERE source = 'odeon' AND status = 'ok'")[0][0] as
     | string
     | null;
+}
+
+export interface TagRow {
+  tag: string;
+  showings: number;
+  films: number;
+  cinemas: number;
+}
+
+/** How many showings carry each format tag, or offer each seat type. */
+export function tags(db: Db, scope: Scope, kind: 'experiences' | 'seating'): TagRow[] {
+  const [where, params] = scoped(scope);
+  const name = kind === 'seating' ? SEAT : 'je.value';
+  return db
+    .all(
+      `SELECT ${name}, count(DISTINCT s.cinema_id || '/' || s.id), count(DISTINCT s.film_id),
+              count(DISTINCT s.cinema_id)
+       FROM screenings s, json_each(s.${kind}) je
+       WHERE ${where} AND ${UPCOMING} GROUP BY 1 ORDER BY 2 DESC, 1`,
+      [...params, scope.now],
+    )
+    .map(([tag, showings, films, cinemas]) => ({ tag, showings, films, cinemas })) as TagRow[];
+}
+
+export interface FacetRow {
+  name: string;
+  /** For people: what they did on the film. */
+  role: string | null;
+  films: number;
+  showings: number;
+}
+
+const FACETS = {
+  certificate: [`${CERTIFICATE}`, 'NULL', ''],
+  distributor: ['f.distributor', 'NULL', ''],
+  genre: ['je.value', 'NULL', ', json_each(f.genres) je'],
+  person: ["je.value->>'name'", "min(je.value->>'$.roles[0]')", ', json_each(f.people) je'],
+} as const;
+
+/** The films now showing, grouped by something about the film. */
+export function facet(db: Db, scope: Scope, kind: keyof typeof FACETS): FacetRow[] {
+  const [where, params] = scoped(scope);
+  const [name, role, join] = FACETS[kind];
+  return db
+    .all(
+      `WITH shown AS (
+         SELECT s.film_id, count(*) AS showings FROM screenings s
+         WHERE ${where} AND ${UPCOMING} GROUP BY s.film_id
+       )
+       SELECT ${name}, ${role}, count(*), sum(shown.showings)
+       FROM shown JOIN films f ON f.id = shown.film_id ${join}
+       GROUP BY 1 HAVING ${name} <> '' ORDER BY lower(${name})`,
+      [...params, scope.now],
+    )
+    .map(([name, role, films, showings]) => ({ name, role, films, showings })) as FacetRow[];
+}
+
+export interface ScreenRow {
+  cinemaId: string;
+  screenId: string;
+  cinema: string;
+  screen: string;
+  capacity: number | null;
+  showings: number;
+  /** Every tag any showing on the screen carries. */
+  tags: string[];
+}
+
+export function screens(db: Db, scope: Scope): ScreenRow[] {
+  const [where, params] = scoped(scope);
+  const found = new Map<string, ScreenRow>();
+  for (const [cinemaId, screenId, cinema, screen, capacity, showings] of db.all(
+    `SELECT s.cinema_id, s.screen_id, c.name, min(s.screen), sc.capacity, count(*)
+     FROM screenings s JOIN cinemas c ON c.id = s.cinema_id
+     LEFT JOIN screens sc ON sc.cinema_id = s.cinema_id AND sc.screen_id = s.screen_id
+     WHERE ${where} AND ${UPCOMING} GROUP BY s.cinema_id, s.screen_id
+     ORDER BY sc.capacity DESC NULLS LAST, lower(c.name)`,
+    [...params, scope.now],
+  ) as never[][])
+    found.set(`${cinemaId}/${screenId}`, { cinemaId, screenId, cinema, screen, capacity, showings, tags: [] });
+  for (const [cinemaId, screenId, tag] of db.all(
+    `SELECT DISTINCT s.cinema_id, s.screen_id, je.value
+     FROM screenings s, json_each(s.experiences) je WHERE ${where} AND ${UPCOMING}`,
+    [...params, scope.now],
+  ) as string[][])
+    found.get(`${cinemaId}/${screenId}`)?.tags.push(tag);
+  return [...found.values()];
+}
+
+export interface ShowingDetail extends Showing {
+  filmStartsAt: string | null;
+  filmEndsAt: string | null;
+  runtime: number | null;
+  seating: string[];
+  address: Record<string, string>;
+}
+
+/** One showing with what its own page and a calendar entry need. */
+export function showing(db: Db, cinemaId: string, id: string): ShowingDetail | null {
+  const rows = db.all(
+    `SELECT s.film_id, s.business_date, s.starts_at, s.time, f.title, c.name, s.screen, sc.capacity,
+            s.experiences, s.sold_out, s.film_starts_at, s.film_ends_at, f.runtime, s.seating, c.address
+     FROM screenings s
+     JOIN films f ON f.id = s.film_id
+     JOIN cinemas c ON c.id = s.cinema_id
+     LEFT JOIN screens sc ON sc.cinema_id = s.cinema_id AND sc.screen_id = s.screen_id
+     WHERE s.cinema_id = ? AND s.id = ?`,
+    [cinemaId, id],
+  );
+  if (!rows.length) return null;
+  const [filmId, date, startsAt, time, title, cinema, screen, capacity, experiences, soldOut, filmStartsAt, filmEndsAt, runtime, seating, address] =
+    rows[0] as never[];
+  return {
+    cinemaId, id, filmId, date, startsAt, time, title, cinema, screen, capacity, filmStartsAt, filmEndsAt, runtime,
+    experiences: JSON.parse(experiences),
+    seating: JSON.parse(seating),
+    address: JSON.parse(address),
+    soldOut: Boolean(soldOut),
+  };
+}
+
+/** Titles of the given films, for listing what a visitor has hidden. */
+export function titles(db: Db, ids: string[]): { id: string; title: string }[] {
+  return db
+    .all('SELECT id, title FROM films WHERE id IN (SELECT value FROM json_each(?)) ORDER BY lower(title)', [
+      JSON.stringify(ids),
+    ])
+    .map(([id, title]) => ({ id, title })) as { id: string; title: string }[];
 }

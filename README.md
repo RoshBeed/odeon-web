@@ -1,14 +1,17 @@
 # ODEON listings
 
-A static site for browsing what is on at ODEON cinemas: films, cinemas, tonight,
-this weekend, what opens soon, and every showtime with its screen and how many
-seats that screen has. Nothing is booked here; showtimes link to ODEON's own
-booking page.
+A static site for browsing what is on at ODEON cinemas: films, cinemas and
+locations, tonight, this weekend, what opens soon, and every showtime with its
+screen and how many seats that screen has. You can also browse by screen size,
+picture format, language, seating, rating, people, genre and distributor.
+Nothing is booked here; each showing links to ODEON's own booking page and can
+be added to your calendar.
 
 There is no server. Once a week a GitHub Actions workflow fetches the listings
 from ODEON into one SQLite file. The site is plain files on GitHub Pages; the
 browser downloads that file (about 2 MB) and runs every query itself. Cinemas
-you tick are remembered in your browser.
+you tick and films you hide are remembered in your browser. It works on a phone
+by tapping, and on a computer by keyboard or mouse.
 
 ## Using the site
 
@@ -20,10 +23,13 @@ you tick are remembered in your browser.
 | / | Search the table |
 | s, or a click on a heading | Sort |
 | n, p | Next and previous page |
-| Space | Tick a cinema (in Cinemas) |
-| b | Book the selected showtime on odeon.co.uk |
+| Space | Tick a cinema, or every cinema in a location |
+| h | Hide a film everywhere, or show it again |
+| b | Book the selected showing on odeon.co.uk |
+| c | Add the selected showing to your calendar |
 
-Everything also works by clicking or tapping.
+Everything also works by clicking or tapping. On a phone each row is a card and
+sorting is a menu above the list.
 
 ## How it is put together
 

@@ -51,8 +51,8 @@ test('choices are read from and written to the address', () => {
 
 test("Greater London's listings will do until a page is about another cinema", () => {
   const london = new Set(['155', '090']);
-  expect(['', 'films', 'all', 'cinema/155', 'film/F1/090', 'film/F1'].map((route) => needsEveryCinema(route, london))).toEqual(
-    [false, false, false, false, false, false]);
+  expect(['', 'films', 'all', 'cinema/155', 'film/F1/090', 'film/F1', 'film/F1/all'].map((route) => needsEveryCinema(route, london))).toEqual(
+    [false, false, false, false, false, false, false]);
   expect(['cinemas', 'locations', 'location/Bath', 'cinema/001', 'show/001/1', 'film/F1/001'].map((route) => needsEveryCinema(route, london))).toEqual(
     [true, true, true, true, true, true]);
   expect(needsEveryCinema('', new Set())).toBe(true);

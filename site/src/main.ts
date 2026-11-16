@@ -31,6 +31,8 @@ interface Row {
   /** The film that `h` hides or shows again. */
   film?: string;
   sold?: boolean;
+  /** Stays first on every page of its table, whatever the sort or search. */
+  pinned?: boolean;
   /** How the row reads on a phone, when columns alone would not. */
   card?: { title: string; meta: string };
 }
@@ -63,7 +65,7 @@ const ticks = readChoice(location.search, 'cinemas');
 const hidden = readChoice(location.search, 'hidden');
 /** What the visitor has asked to see that is otherwise left out: `events`. */
 const extras = readChoice(location.search, 'show');
-/** How the pages are laid out: `columns` puts them side by side. */
+/** How the pages are laid out: side by side in columns, unless this holds `pages`. */
 const layout = readChoice(location.search, 'view');
 let version = 0;
 /** Put the choices in the address, where a bookmark or a shared link keeps them. */
@@ -147,7 +149,7 @@ function addToCalendar(cinema: string, id: string) {
 }
 
 /** Sort, search and page a short list here; showings() does it for showtimes. */
-function local(columns: Column[], rows: Row[], ui: Ui): Table {
+function local(columns: Column[], rows: Row[], ui: Ui, all?: Row): Table {
   const value = (row: Row, index: number) => (row.values ? row.values[index] : row.cells[index]);
   const needle = ui.text.toLowerCase();
   let found = needle
@@ -163,7 +165,13 @@ function local(columns: Column[], rows: Row[], ui: Ui): Table {
       return sign * (typeof x === 'number' && typeof y === 'number' ? x - y : String(x).localeCompare(String(y)));
     });
   }
-  return { columns, rows: found.slice(ui.page * PAGE, (ui.page + 1) * PAGE), total: found.length };
+  const page = found.slice(ui.page * PAGE, (ui.page + 1) * PAGE);
+  return { columns, rows: all ? [{ ...all, cells: columns.map((_, index) => (index ? '' : 'All')) }, ...page] : page, total: found.length };
+}
+
+/** The row that heads a list of ways to narrow things down: skip this one, see everything. */
+function allRow(target: string, what: string): Row {
+  return { cells: [], open: target, pinned: true, card: { title: 'All', meta: what } };
 }
 
 // ---- Views --------------------------------------------------------------
@@ -189,7 +197,29 @@ const facetRows = (kind: 'certificate' | 'person' | 'genre' | 'distributor') =>
 const allCinemas = () => remember('cinemas', () => q.cinemas(db, scope()));
 const some = (names: string[]) => names.slice(0, 3).join(', ') + (names.length > 3 ? ', …' : '');
 
-function homeView(): View {
+/** The page the site opens on: what it is and how to set it up. */
+function welcomeView(): View {
+  const enter = () => go('browse');
+  const chosen = [
+    ticks.size ? `${count(ticks.size, 'cinema')} ticked` : 'every cinema',
+    extras.has('events') ? 'event cinema shown' : 'event cinema left out',
+    ...(hidden.size ? [`${count(hidden.size, 'film')} hidden`] : []),
+  ].join(' · ');
+  const intro = h('div', { class: 'intro' },
+    h('p', {}, "What's on at ODEON, on which screen, and how big that screen is."),
+    h('p', { class: 'actions' }, button('Browse the listings', enter)),
+    facts([
+      ['1. Your cinemas', 'open Cinemas or Location and tick the ones you go to. Everything then shows only those.'],
+      ['2. Bookmark', 'your choices are part of the page address; nothing is saved in the browser. Bookmark the page and it opens the same way anywhere.'],
+      ['Now', chosen],
+      ['Keys', '↑ ↓ move · → or Enter open · ← or Esc back · / search · s sort · Space tick'],
+    ]),
+  );
+  return { title: 'Welcome', intro, table: () => ({ columns: [], rows: [], total: 0 }), keys: { Enter: enter, ArrowRight: enter } };
+}
+
+/** Everything there is to browse or choose, each in one place. */
+function menuView(): View {
   const rows = (): Row[] => {
     const home = q.home(db, scope());
     const [first, last] = q.weekend(scope().today);
@@ -215,22 +245,11 @@ function homeView(): View {
         return { cells: [name, count(found.length, noun), some(busiest)], open: path('by', kind) };
       }),
       { cells: ['All showtimes', count(home.showings, 'screening'), 'every film, cinema and day'], open: 'all' },
-      ...(hidden.size ? [{ cells: ['Hidden films', count(hidden.size, 'film'), 'show them again'], open: 'hidden' }] : []),
-      { cells: ['Settings', '', 'your cinemas, event cinema, layout · then bookmark the page'], open: 'settings' },
+      { cells: ['Settings', '', 'event cinema, layout, hidden films · copy the address'], open: 'settings' },
     ];
   };
-  const intro = h('div', { class: 'intro' },
-    h('p', {}, "ODEON · what's on, on which screen, and how big it is."),
-    h('p', { class: 'dim phone' }, 'Tick your cinemas in Cinemas or Location and everything shows only those. Then bookmark the page: its address holds your choices.'),
-    facts([
-      ['Quick start', 'tick your favourite cinemas in Cinemas or whole groups in Location; everything then shows only those. Then bookmark the page: its address holds your choices.'],
-      ['Getting around', 'tap or click a row · or ↑ ↓ move, Enter open, Esc back'],
-      ['Every table', 'sort by a heading · search with the box or /'],
-      ['Then', 'a film → a cinema → its showtimes → book, or add to your calendar'],
-    ]),
-  );
   const columns = [{ label: 'Browse' }, { label: 'How many' }, { label: 'Showing', wrap: true }];
-  return { title: 'Start', intro, table: (ui) => local(columns, rows(), ui) };
+  return { title: 'Browse', table: (ui) => local(columns, rows(), ui) };
 }
 
 function filmsView(title = 'Films', filter: q.FilmFilter = {}): View {
@@ -250,7 +269,7 @@ function filmsView(title = 'Films', filter: q.FilmFilter = {}): View {
         meta: [film.certificate || 'TBC', film.runtime ? `${film.runtime} min` : '', film.imdb ? `IMDb ${film.imdb.toFixed(1)}` : '', count(film.cinemas, 'cinema'), count(film.showings, 'showing')].filter(Boolean).join(' · '),
       },
     })));
-    return local(columns, rows, ui);
+    return local(columns, rows, ui, Object.keys(filter).length ? undefined : allRow('all', 'every showtime, whatever the film'));
   };
   return { title, table };
 }
@@ -300,7 +319,7 @@ function filmView(id: string): View {
   return {
     title: film.title,
     intro: filmIntro(film),
-    table: (ui) => local(columns, rows, ui),
+    table: (ui) => local(columns, rows, ui, allRow(path('film', id, 'all'), 'every showtime of this film')),
     keys: { h: () => { toggle(hidden, [id]); render(); } },
   };
 }
@@ -316,22 +335,20 @@ function hiddenView(): View {
 function settingsView(): View {
   const columns: Column[] = [{ label: 'Setting' }, { label: 'Now' }, { label: 'What it does', wrap: true }];
   const rows = (): Row[] => [
-    { cells: ['Cinemas', ticks.size ? `${count(ticks.size, 'cinema')} ticked` : 'every cinema', 'tick the ones you go to; everything then shows only those'], open: 'cinemas' },
-    { cells: ['Location', '', 'tick every cinema in a place at once, such as Greater London'], open: 'locations' },
     {
       cells: ['Event cinema', extras.has('events') ? 'shown' : 'hidden', 'concerts, theatre, opera and other specials, which ODEON marks Event Cinema'],
       tick: { state: extras.has('events') ? 'all' : 'none', toggle: () => toggle(extras, ['events']) },
     },
     {
-      cells: ['Columns', layout.has('columns') ? 'on' : 'off', 'show pages side by side, as the column view in Finder does (not on a phone)'],
-      tick: { state: layout.has('columns') ? 'all' : 'none', toggle: switchLayout },
+      cells: ['Columns', layout.has('pages') ? 'off' : 'on', 'show pages side by side, as the column view in Finder does (never on a phone)'],
+      tick: { state: layout.has('pages') ? 'none' : 'all', toggle: switchLayout },
     },
     { cells: ['Hidden films', count(hidden.size, 'film'), 'films you hid with h or the Hide button; open to show them again'], open: 'hidden' },
   ];
   const copied = h('span', { class: 'dim' });
   const intro = h('div', { class: 'intro' },
     h('p', {}, 'Nothing is saved in this browser. Every choice here, and how each page is sorted and searched, is part of the page address.'),
-    h('p', {}, 'Set things up, then bookmark the page. Opening the bookmark brings it all back, on any device.'),
+    h('p', {}, 'Tick your cinemas under Cinemas or Location, set things up here, then bookmark the page. Opening the bookmark brings it all back, on any device.'),
     h('p', { class: 'actions' },
       button('Copy the address', () => {
         navigator.clipboard.writeText(location.href).then(
@@ -359,7 +376,7 @@ function cinemasView(location?: string): View {
         open: path('cinema', cinema.id),
         tick: { state: ticks.has(cinema.id) ? 'all' : 'none', toggle: () => toggle(ticks, [cinema.id]) },
       }));
-    return local(columns, rows, ui);
+    return local(columns, rows, ui, location ? undefined : allRow('all', 'every showtime, whatever the cinema'));
   };
   const intro = h('div', { class: 'intro' }, h('p', { class: 'dim' }, 'Tick a cinema with its box, or Space. With any ticked, every other screen shows only those.'));
   return { title: location ?? 'Cinemas', intro, table };
@@ -382,7 +399,7 @@ function locationsView(): View {
         },
       };
     });
-    return local(columns, rows, ui);
+    return local(columns, rows, ui, allRow('cinemas', 'every cinema'));
   };
   const intro = h('div', { class: 'intro' }, h('p', { class: 'dim' }, 'Tick a location to tick every cinema in it.'));
   return { title: 'Location', intro, table };
@@ -406,7 +423,7 @@ function datesView(): View {
     values: [date.date, date.films, date.showings],
     open: path('date', date.date),
   }));
-  return { title: 'Dates', table: (ui) => local(columns, rows, ui) };
+  return { title: 'Dates', table: (ui) => local(columns, rows, ui, allRow('all', 'every showtime, whatever the day')) };
 }
 
 function tagsView(kind: TagKind): View {
@@ -415,13 +432,13 @@ function tagsView(kind: TagKind): View {
     cells: [tagLabel(row.tag), row.showings, row.films, row.cinemas],
     open: path('tag', row.tag),
   }));
-  return { title: kind, table: (ui) => local(columns, rows, ui) };
+  return { title: kind, table: (ui) => local(columns, rows, ui, allRow('all', 'every showtime')) };
 }
 
 function seatsView(): View {
   const columns: Column[] = [{ label: 'Seat type', wrap: true }, { label: 'Showings', right: true }, { label: 'Films', right: true }, { label: 'Cinemas', right: true }];
   const rows = seatTypes().map((row): Row => ({ cells: [row.tag, row.showings, row.films, row.cinemas], open: path('seat', row.tag) }));
-  return { title: 'Seating', table: (ui) => local(columns, rows, ui) };
+  return { title: 'Seating', table: (ui) => local(columns, rows, ui, allRow('all', 'every showtime, whatever the seats')) };
 }
 
 function facetView(title: string, kind: 'certificate' | 'person' | 'genre' | 'distributor'): View {
@@ -434,7 +451,7 @@ function facetView(title: string, kind: 'certificate' | 'person' | 'genre' | 'di
     ...(kind === 'certificate' ? { values: [certificateAge(row.name), row.films, row.showings] } : {}),
     open: path('by', kind, row.name),
   }));
-  return { title, table: (ui) => local(columns, rows, ui) };
+  return { title, table: (ui) => local(columns, rows, ui, allRow('films', 'every film')) };
 }
 
 function screensView(): View {
@@ -447,7 +464,7 @@ function screensView(): View {
       meta: [screen.capacity ? `${screen.capacity} seats` : '', count(screen.showings, 'showing'), formats(screen.tags, ['Picture'])].filter(Boolean).join(' · '),
     },
   }));
-  return { title: 'Screens', table: (ui) => local(columns, rows, ui) };
+  return { title: 'Screens', table: (ui) => local(columns, rows, ui, allRow('all', 'every showtime, whatever the screen')) };
 }
 
 /** A showtimes table. Leaving a column out is for what the screen already fixes. */
@@ -503,10 +520,10 @@ function showView(cinema: string, id: string): View {
   const calendar = () => addToCalendar(cinema, id);
   const intro = h('div', { class: 'intro' },
     facts([
-      ['Film', link(show.title, '#/' + path('film', show.filmId))],
+      ['Film', inner(show.title, path('film', show.filmId))],
       ['When', `${day(show.startsAt)} at ${show.time}${show.soldOut ? ' · sold out' : ''}`],
       ...(show.filmStartsAt ? [['Film starts', `${TIME.format(new Date(show.filmStartsAt))}${show.filmEndsAt ? ', ends ' + TIME.format(new Date(show.filmEndsAt)) : ''}`] as [string, string]] : []),
-      ['Cinema', link(`ODEON ${show.cinema}`, '#/' + path('cinema', show.cinemaId))],
+      ['Cinema', inner(`ODEON ${show.cinema}`, path('cinema', show.cinemaId))],
       ...(address ? [['Address', address] as [string, string]] : []),
       ['Screen', `${show.screen}${show.capacity ? ` · ${show.capacity} seats` : ''}`],
       ...(formats(show.experiences) ? [['Formats', formats(show.experiences)] as [string, string]] : []),
@@ -533,7 +550,8 @@ function viewFor(route: string): View {
   const today = scope().today;
   const cinemaName = (id: string) => allCinemas().find((cinema) => cinema.id === id)?.name;
   switch (name) {
-    case '': return homeView();
+    case '': return welcomeView();
+    case 'browse': return menuView();
     case 'films': return filmsView();
     case 'hidden': return hiddenView();
     case 'settings': return settingsView();
@@ -570,6 +588,7 @@ function viewFor(route: string): View {
     case 'film': {
       if (!b) return filmView(a);
       const film = q.film(db, a);
+      if (film && b === 'all') return showingsView(film.title, { film: a });
       const cinema = cinemaName(b);
       if (!film || !cinema) return missing('That film is no longer showing there.');
       return showingsView(`${film.title} · ${shortCinema(cinema)}`, { film: a, cinema: b }, scope([]));
@@ -600,11 +619,18 @@ function noteNow() {
 
 function go(target: string) {
   noteNow(); // so that going back finds this page as it was left
-  location.hash = columns() ? writePage(target, PLAIN, here()) : '#/' + target;
+  // The welcome page stands alone; every other page opens alongside in the columns view.
+  location.hash = columns() && current.route ? writePage(target, PLAIN, here()) : '#/' + target;
+}
+/** A link to another page here; in the columns view it opens alongside. */
+function inner(label: string, target: string): HTMLElement {
+  const anchor = link(label, '#/' + target);
+  anchor.onclick = (event) => { event.preventDefault(); go(target); };
+  return anchor;
 }
 function back() {
   if (columns()) {
-    if (current.trail.length) location.hash = '#/' + current.trail.join('|');
+    if (current.route) location.hash = '#/' + current.trail.join('|'); // from the first column, the welcome page
     return;
   }
   if (!route()) return;
@@ -616,7 +642,8 @@ function back() {
 // The pages that led here stay on screen to the left, and the highlighted
 // row's page shows to the right before it is opened. The address lists them.
 
-const columns = () => layout.has('columns') && !narrow.matches;
+/** Columns unless the visitor asked for pages, or the screen is a phone's. */
+const columns = () => !layout.has('pages') && !narrow.matches;
 /** The trail a deeper page would have: this page's, and this page as it stands. */
 const here = () => [...current.trail, writePage(current.route, current.ui).slice(2)];
 
@@ -632,7 +659,7 @@ function cardList(table: Table, selected: number, pick: (index: number) => void,
         return column.right ? `${cell} ${cell === 1 ? noun.replace(/s$/, '') : noun}` : String(cell);
       }).filter(Boolean).join(' · '),
     };
-    const card = h('li', { class: [index === selected ? 'selected' : '', row.sold ? 'sold' : ''].join(' ') },
+    const card = h('li', { class: [index === selected ? 'selected' : '', row.sold ? 'sold' : '', row.pinned ? 'pinned' : ''].join(' ') },
       ...(row.tick ? [box ? box(row, index) : h('span', { class: 'tick' }, BOXES[row.tick.state])] : []),
       h('span', { class: 'text' }, h('strong', {}, shown.title), ...(shown.meta ? [h('span', { class: 'dim' }, shown.meta)] : [])),
       ...(row.open ? [h('span', { class: 'go dim' }, '›')] : []));
@@ -678,7 +705,7 @@ function preview() {
 }
 function switchLayout() {
   noteNow();
-  toggle(layout, ['columns']);
+  toggle(layout, ['pages']);
   render();
 }
 
@@ -686,8 +713,10 @@ function switchLayout() {
  *  never replaces it; paint() then redraws only what a keystroke changes. */
 function render() {
   address(); // going back can land on an address from before a choice changed
-  const { trail, route: key, ui } = readPage(location.hash);
-  const side = columns();
+  const { trail: led, route: key, ui } = readPage(location.hash);
+  const side = columns() && key !== '';
+  // The first column is always the menu, however this address was reached.
+  const trail = side && readPage('#/' + (led[0] ?? key)).route !== 'browse' ? ['browse', ...led] : led;
   if (!whole && [...(side ? trail : []).map((segment) => readPage('#/' + segment).route), key].some((place) => needsEveryCinema(place, ticks))) {
     // This page is about more than Greater London: fetch the rest, then show it.
     app.querySelector('.status')?.replaceChildren('loading every cinema…');
@@ -711,10 +740,9 @@ function render() {
   app.classList.toggle('side', side);
   app.replaceChildren(
     h('header', {},
-      ...(key ? [button('← Back', back), link('Start', '#/')] : []),
-      ...(key === 'settings' ? [] : [link('Settings', '#/settings')]),
-      h('h1', {}, 'ODEON ', h('span', {}, '— ' + view.title)),
-      ...(narrow.matches ? [] : [button(side ? 'View as pages' : 'View as columns', switchLayout)])),
+      // Columns show where you are; pages need a way back and a way to the menu.
+      ...(key && !side ? [button('← Back', back), ...(key === 'browse' ? [] : [inner('Menu', 'browse')])] : []),
+      h('h1', {}, link('ODEON', '#/'), h('span', {}, ' — ' + view.title))),
     ...(side
       ? [h('div', { class: 'columns' },
           ...trail.map(passed),
@@ -770,7 +798,7 @@ function paint() {
       return th;
     }));
     const body = h('tbody', {}, ...table.rows.map((row, index) => {
-      const tr = h('tr', { class: index === ui.selected ? 'selected' : '' },
+      const tr = h('tr', { class: [index === ui.selected ? 'selected' : '', row.pinned ? 'pinned' : ''].join(' ') },
         ...(ticking ? [row.tick ? tickBox(row, index, 'td') : h('td', {})] : []),
         ...row.cells.map((cell, column) => {
           const spec = table.columns[column];

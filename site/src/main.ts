@@ -1,6 +1,6 @@
 // The interface: a stack of tables over the listings, driven by keys, clicks or taps.
 import { ics } from './calendar';
-import { needsEveryCinema, readChoice, readPage, writeChoices, writePage, type Ui } from './choices';
+import { needsEveryCinema, PLAIN, readChoice, readPage, writeChoices, writePage, type Ui } from './choices';
 import { openListings } from './db';
 import * as q from './queries';
 import { formats, place, shortCinema, tagKind, tagLabel, type TagKind } from './tags';
@@ -63,10 +63,12 @@ const ticks = readChoice(location.search, 'cinemas');
 const hidden = readChoice(location.search, 'hidden');
 /** What the visitor has left out altogether: `events`. */
 const without = readChoice(location.search, 'without');
+/** How the pages are laid out: `columns` puts them side by side. */
+const layout = readChoice(location.search, 'view');
 let version = 0;
 /** Put the choices in the address, where a bookmark or a shared link keeps them. */
 function address() {
-  const search = writeChoices({ cinemas: ticks, hidden, without });
+  const search = writeChoices({ cinemas: ticks, hidden, without, view: layout });
   if (search !== location.search) history.replaceState(null, '', location.pathname + search + location.hash);
 }
 function toggle(set: Set<string>, ids: string[], on?: boolean) {
@@ -543,7 +545,7 @@ function viewFor(route: string): View {
 // ---- Rendering and keys -------------------------------------------------
 
 const route = () => readPage(location.hash).route;
-let current: { route: string; view: View; ui: Ui; table: Table };
+let current: { trail: string[]; route: string; view: View; ui: Ui; table: Table };
 
 /** The sort, search, page and highlighted row go in the address too, so that a
  *  bookmark, a link or going back returns to exactly this. They are written
@@ -556,47 +558,131 @@ function note() {
 function noteNow() {
   clearTimeout(noting);
   if (!current || current.route !== route()) return;
-  const hash = writePage(current.route, current.ui);
+  const hash = writePage(current.route, current.ui, current.trail);
   if (hash !== (location.hash || '#/')) history.replaceState(null, '', location.pathname + location.search + hash);
 }
 
 function go(target: string) {
   noteNow(); // so that going back finds this page as it was left
-  location.hash = '#/' + target;
+  location.hash = columns() ? writePage(target, PLAIN, here()) : '#/' + target;
 }
 function back() {
+  if (columns()) {
+    if (current.trail.length) location.hash = '#/' + current.trail.join('|');
+    return;
+  }
   if (!route()) return;
   if (history.length > 1) history.back();
   else go('');
+}
+
+// ---- The columns view: pages side by side, as in Finder's column view ----
+// The pages that led here stay on screen to the left, and the highlighted
+// row's page shows to the right before it is opened. The address lists them.
+
+const columns = () => layout.has('columns') && !narrow.matches;
+/** The trail a deeper page would have: this page's, and this page as it stands. */
+const here = () => [...current.trail, writePage(current.route, current.ui).slice(2)];
+
+/** A table as a list of cards: how a phone, and each column, shows it. */
+function cardList(table: Table, selected: number, pick: (index: number) => void, box?: (row: Row, index: number) => Node): HTMLElement {
+  return h('ul', { class: 'cards' }, ...table.rows.map((row, index) => {
+    const shown = row.card ?? {
+      title: String(row.cells[0] ?? '–'),
+      meta: row.cells.slice(1).map((cell, offset) => {
+        const column = table.columns[offset + 1];
+        if (cell === null || cell === '') return '';
+        const noun = column.label.toLowerCase();
+        return column.right ? `${cell} ${cell === 1 ? noun.replace(/s$/, '') : noun}` : String(cell);
+      }).filter(Boolean).join(' · '),
+    };
+    const card = h('li', { class: [index === selected ? 'selected' : '', row.sold ? 'sold' : ''].join(' ') },
+      ...(row.tick ? [box ? box(row, index) : h('span', { class: 'tick' }, BOXES[row.tick.state])] : []),
+      h('span', { class: 'text' }, h('strong', {}, shown.title), ...(shown.meta ? [h('span', { class: 'dim' }, shown.meta)] : [])),
+      ...(row.open ? [h('span', { class: 'go dim' }, '›')] : []));
+    card.onclick = () => pick(index);
+    return card;
+  }));
+}
+
+/** A page that led here: its list, with the row that was followed highlighted. */
+function passed(segment: string, index: number, trail: string[]): HTMLElement {
+  const { route: place, ui } = readPage('#/' + segment);
+  const view = viewFor(place);
+  const table = view.table(ui);
+  const list = cardList(table, ui.selected, (row) => {
+    location.hash = writePage(place, { ...ui, selected: row }, trail.slice(0, index));
+  });
+  return h('div', { class: 'column' }, h('h2', {}, view.title), ...(table.columns.length ? [list] : view.intro ? [view.intro] : []));
+}
+
+/** Show the highlighted row's page in the last column, before it is opened. */
+function preview() {
+  const box = app.querySelector('.preview');
+  if (!box) return;
+  const row = selectedRow();
+  if (!row?.open) return box.replaceChildren();
+  const target = row.open;
+  if (!whole && needsEveryCinema(target, ticks)) {
+    // Its listings are not downloaded yet; opening it fetches them.
+    return box.replaceChildren(h('h2', {}, String(row.cells[0] ?? '')), h('p', { class: 'dim' }, 'Press → to open.'));
+  }
+  const view = viewFor(target);
+  const table = view.table({ ...PLAIN });
+  const shown = { ...table, rows: table.rows.slice(0, 50) };
+  box.replaceChildren(
+    h('h2', {}, view.title),
+    ...(view.intro ? [view.intro] : []),
+    ...(table.columns.length ? [cardList(shown, -1, (index) => {
+      noteNow();
+      location.hash = writePage(target, { ...PLAIN, selected: index }, here());
+    })] : []),
+    ...(table.total > shown.rows.length ? [h('p', { class: 'dim' }, `and ${count(table.total - shown.rows.length, 'more row')}`)] : []),
+  );
+}
+function switchLayout() {
+  noteNow();
+  toggle(layout, ['columns']);
+  render();
 }
 
 /** Build the page for a route. The search box lives here so that typing in it
  *  never replaces it; paint() then redraws only what a keystroke changes. */
 function render() {
   address(); // going back can land on an address from before a choice changed
-  const key = route();
-  if (!whole && needsEveryCinema(key, ticks)) {
+  const { trail, route: key, ui } = readPage(location.hash);
+  const side = columns();
+  if (!whole && [...(side ? trail : []).map((segment) => readPage('#/' + segment).route), key].some((place) => needsEveryCinema(place, ticks))) {
     // This page is about more than Greater London: fetch the rest, then show it.
     app.querySelector('.status')?.replaceChildren('loading every cinema…');
     everything ??= load(true);
     return;
   }
   if (!db) return; // still downloading; load() draws the page when it arrives
-  const { ui } = readPage(location.hash);
   const view = viewFor(key);
   document.title = key ? `${view.title} · ODEON` : 'ODEON';
   const search = h('input', { type: 'search', placeholder: 'Search this table', 'aria-label': 'Search this table' }) as HTMLInputElement;
   search.value = ui.text;
   search.oninput = () => { ui.text = search.value; ui.page = 0; ui.selected = 0; paint(); };
   const stamp = db.ingested;
-  const hints = ['↑↓ move', 'Enter open', 'Esc back', '/ search', 's sort', 'n p pages', 'Space tick', 'h hide film', 'b book', 'c calendar'];
-  app.replaceChildren(
-    h('header', {},
-      ...(key ? [button('← Back', back), link('Start', '#/')] : []),
-      h('h1', {}, 'ODEON ', h('span', {}, '— ' + view.title))),
+  const hints = ['↑↓ move', 'Enter open', 'Esc back', '/ search', 's sort', 'n p pages', 'Space tick', 'h hide film', 'b book', 'c calendar', 'v columns'];
+  const parts = [
     ...(view.intro ? [view.intro] : []),
     h('div', { class: 'tools' }, search, h('span', { class: 'sorter' }), h('span', { class: 'pager' })),
     h('div', { class: 'scroll' }),
+  ];
+  app.classList.toggle('side', side);
+  app.replaceChildren(
+    h('header', {},
+      ...(key ? [button('← Back', back), link('Start', '#/')] : []),
+      h('h1', {}, 'ODEON ', h('span', {}, '— ' + view.title)),
+      ...(narrow.matches ? [] : [button(side ? 'View as pages' : 'View as columns', switchLayout)])),
+    ...(side
+      ? [h('div', { class: 'columns' },
+          ...trail.map(passed),
+          h('div', { class: 'column focused' }, h('h2', {}, view.title), ...parts),
+          h('div', { class: 'column preview' }))]
+      : parts),
     h('footer', {},
       h('span', { class: 'keys' }, ...hints.flatMap((hint) => {
         const [keys, ...words] = hint.split(' ');
@@ -604,9 +690,13 @@ function render() {
       })),
       h('span', { class: 'status' }, `listings from ${stamp ? day(stamp) : 'no ingest yet'}`)),
   );
-  current = { route: key, view, ui, table: { columns: [], rows: [], total: 0 } };
+  current = { trail: side ? trail : [], route: key, view, ui, table: { columns: [], rows: [], total: 0 } };
   paint();
   window.scrollTo(0, 0);
+  const strip = app.querySelector('.columns');
+  if (!ui.selected) app.querySelector('.focused')?.scrollTo(0, 0); // start a column at its top, above its details
+  for (const followed of app.querySelectorAll('.column:not(.focused) .selected')) followed.scrollIntoView({ block: 'center' });
+  if (strip) strip.scrollLeft = strip.scrollWidth; // keep the newest columns in view
 }
 
 const BOXES = { all: '[x]', some: '[-]', none: '[ ]' };
@@ -629,23 +719,10 @@ function paint() {
   let list: HTMLElement;
   if (narrow.matches) {
     // Phones: one card a row, the whole card a tap target.
-    list = h('ul', { class: 'cards' }, ...table.rows.map((row, index) => {
-      const shown = row.card ?? {
-        title: String(row.cells[0] ?? '–'),
-        meta: row.cells.slice(1).map((cell, offset) => {
-          const column = table.columns[offset + 1];
-          if (cell === null || cell === '') return '';
-          const noun = column.label.toLowerCase();
-          return column.right ? `${cell} ${cell === 1 ? noun.replace(/s$/, '') : noun}` : String(cell);
-        }).filter(Boolean).join(' · '),
-      };
-      const card = h('li', { class: [index === ui.selected ? 'selected' : '', row.sold ? 'sold' : ''].join(' ') },
-        ...(row.tick ? [tickBox(row, index, 'span')] : []),
-        h('span', { class: 'text' }, h('strong', {}, shown.title), ...(shown.meta ? [h('span', { class: 'dim' }, shown.meta)] : [])),
-        ...(row.open ? [h('span', { class: 'go dim' }, '›')] : []));
-      card.onclick = () => { ui.selected = index; open(); };
-      return card;
-    }));
+    list = cardList(table, ui.selected, (index) => { ui.selected = index; open(); }, (row, index) => tickBox(row, index, 'span'));
+  } else if (columns()) {
+    // Columns: a click highlights, which shows the row's page alongside.
+    list = cardList(table, ui.selected, (index) => move(index - ui.selected), (row, index) => tickBox(row, index, 'span'));
   } else {
     const head = h('tr', {}, ...(ticking ? [h('th', {})] : []), ...table.columns.map((column, index) => {
       const sorted = ui.order === index;
@@ -692,6 +769,7 @@ function paint() {
   ] : []));
   if (!narrow.matches) list.querySelector('.selected')?.scrollIntoView({ block: 'nearest' });
   note();
+  preview();
 }
 
 function move(step: number) {
@@ -703,6 +781,7 @@ function move(step: number) {
   items[ui.selected]?.classList.add('selected');
   if (!narrow.matches) items[ui.selected]?.scrollIntoView({ block: 'nearest' });
   note();
+  preview();
 }
 function turn(step: number) {
   const { ui, table } = current;
@@ -712,6 +791,7 @@ function turn(step: number) {
   ui.selected = 0;
   paint();
   window.scrollTo(0, 0);
+  app.querySelector('.focused')?.scrollTo(0, 0);
 }
 function sortBy(index: number, flipSame = true) {
   const { ui, view, table } = current;
@@ -754,7 +834,7 @@ document.addEventListener('keydown', (event) => {
     PageDown: () => move(20), PageUp: () => move(-20),
     Home: () => move(-Infinity), End: () => move(Infinity),
     Enter: open, ArrowRight: open, Escape: back, ArrowLeft: back, Backspace: back,
-    ' ': tick, s: nextSort, n: () => turn(1), p: () => turn(-1),
+    ' ': tick, s: nextSort, n: () => turn(1), p: () => turn(-1), v: switchLayout,
     '/': () => app.querySelector<HTMLInputElement>('.tools input')?.focus(),
     b: () => { const row = selectedRow(); if (row?.book) window.open(row.book, '_blank', 'noopener'); },
     c: () => selectedRow()?.calendar?.(),
@@ -767,7 +847,7 @@ document.addEventListener('keydown', (event) => {
   action();
 });
 window.addEventListener('hashchange', render);
-narrow.addEventListener('change', () => { if (current) paint(); });
+narrow.addEventListener('change', () => { if (current) render(); });
 
 function load(all: boolean): Promise<void> {
   return openListings(all ? './data/listings.json.gz' : './data/london.json.gz').then(

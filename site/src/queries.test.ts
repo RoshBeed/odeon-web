@@ -181,6 +181,14 @@ describe('queries', () => {
     expect(q.cinemas(db, quiet).map((cinema) => cinema.showings)).toEqual([2, 2]);
   });
 
+  test('listings for some cinemas keep every cinema and film, but only their showings', () => {
+    const some = q.open(exportListings(sqlite, new Set(['001'])));
+    expect(q.showings(some, scope, {}).rows.map((row) => row.id)).toEqual(['001-1']);
+    expect(q.soon(some, scope)).toEqual([]);
+    expect(q.cinemas(some, scope).map((cinema) => [cinema.name, cinema.showings])).toEqual([['Aberdeen', 1], ['London West End', 0]]);
+    expect(q.film(some, 'F2')?.title).toBe('Paddington');
+  });
+
   test('the last successful ingest is reported', () => {
     expect(db.ingested).toBe('2026-11-10T05:00:00Z');
   });

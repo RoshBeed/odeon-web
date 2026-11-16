@@ -3,7 +3,8 @@
 import type { DatabaseSync } from 'node:sqlite';
 import type { Data, Film } from './queries';
 
-export function exportListings(sqlite: DatabaseSync): Data {
+/** Everything, or with `only`, the showings and announcements of just those cinemas. */
+export function exportListings(sqlite: DatabaseSync, only?: Set<string>): Data {
   // Most of a showing repeats in others (its cinema, film, date, formats),
   // so each distinct value is written once and showings refer to it by number.
   const values: unknown[] = [];
@@ -56,14 +57,16 @@ export function exportListings(sqlite: DatabaseSync): Data {
       id, name, stored: Boolean(stored), address: JSON.parse(address),
     })),
     films,
-    availability: all('SELECT cinema_id, film_id FROM availability').map(([cinema, id]): [string, string] => [cinema, film(id)]),
+    availability: all('SELECT cinema_id, film_id FROM availability')
+      .filter(([cinema]) => !only || only.has(cinema))
+      .map(([cinema, id]): [string, string] => [cinema, film(id)]),
     screens: all('SELECT cinema_id, screen_id, capacity FROM screens') as unknown as Data['screens'],
     // In the order the site lists them, which it relies on.
     rows: all(
       `SELECT cinema_id, id, film_id, business_date, starts_at, time, film_starts_at, film_ends_at,
               screen, screen_id, experiences, seating, sold_out
        FROM screenings ORDER BY starts_at, cinema_id, id`,
-    ).map((row) => row.map((value, column) => number(column === 2 ? film(value) : column === 10 || column === 11 ? JSON.parse(value) : value))),
+    ).filter(([cinema]) => !only || only.has(cinema)).map((row) => row.map((value, column) => number(column === 2 ? film(value) : column === 10 || column === 11 ? JSON.parse(value) : value))),
     values,
   };
 }

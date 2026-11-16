@@ -32,8 +32,8 @@ export function formats(tags: string[], kinds: TagKind[] = ['Picture', 'Language
   return tags.filter((tag) => kinds.includes(tagKind(tag))).map(tagLabel).join(', ');
 }
 
-// Outer boroughs whose address city is not London.
-const LONDON = new Set('090 125 153 155 158 200 486 536 555 593 694 695 838 852 858 888 949 963 995'.split(' '));
+/** Greater London's cinemas, among them outer boroughs whose address city is not London. */
+export const LONDON = new Set('090 125 153 155 158 200 486 536 555 593 694 695 838 852 858 888 949 963 995'.split(' '));
 // Some ODEON addresses use a street, county or postcode as their city.
 const PLACES: Record<string, string> = {
   '031': 'Dublin', '033': 'Dublin', '044': 'Dundee', '075': 'Waterford', '076': 'Dublin', '078': 'Dublin',

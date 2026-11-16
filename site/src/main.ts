@@ -1,6 +1,6 @@
 // The interface: a stack of tables over the listings, driven by keys, clicks or taps.
 import { ics } from './calendar';
-import { readChoice, writeChoices } from './choices';
+import { needsEveryCinema, readChoice, writeChoices } from './choices';
 import { openListings } from './db';
 import * as q from './queries';
 import { formats, place, shortCinema, tagKind, tagLabel, type TagKind } from './tags';
@@ -58,6 +58,9 @@ interface Ui {
 }
 
 let db: q.Listings;
+/** Whether `db` holds every cinema's showings, or only Greater London's. */
+let whole = false;
+let everything: Promise<void> | undefined;
 const app = document.getElementById('app')!;
 const uis = new Map<string, Ui>();
 const narrow = matchMedia('(max-width: 640px)');
@@ -562,6 +565,13 @@ function back() {
 function render() {
   address(); // going back can land on an address from before a choice changed
   const key = route();
+  if (!whole && needsEveryCinema(key, ticks)) {
+    // This page is about more than Greater London: fetch the rest, then show it.
+    app.querySelector('.status')?.replaceChildren('loading every cinema…');
+    everything ??= load(true);
+    return;
+  }
+  if (!db) return; // still downloading; load() draws the page when it arrives
   if (!uis.has(key)) uis.set(key, { order: null, descending: false, text: '', page: 0, selected: 0 });
   const ui = uis.get(key)!;
   const view = viewFor(key);
@@ -748,7 +758,17 @@ document.addEventListener('keydown', (event) => {
 window.addEventListener('hashchange', render);
 narrow.addEventListener('change', () => { if (current) paint(); });
 
-openListings('./data/listings.json.gz').then(
-  (listings) => { db = listings; render(); },
-  (error) => { app.replaceChildren(h('p', { class: 'error' }, String(error.message ?? error))); },
-);
+function load(all: boolean): Promise<void> {
+  return openListings(all ? './data/listings.json.gz' : './data/london.json.gz').then(
+    (listings) => {
+      db = listings;
+      whole = all;
+      version += 1; // every remembered count came from the other listings
+      render();
+    },
+    (error) => { app.replaceChildren(h('p', { class: 'error' }, String(error.message ?? error))); },
+  );
+}
+const start = needsEveryCinema(route(), ticks);
+if (start) everything = load(true);
+else load(false);

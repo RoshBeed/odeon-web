@@ -6,10 +6,8 @@
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
-    "test": "vitest run"
-  },
-  "dependencies": {
-    "@sqlite.org/sqlite-wasm": "3.54.1-build1"
+    "test": "vitest run",
+    "listings": "node scripts/export.ts ../data/odeon.sqlite public/data"
   },
   "devDependencies": {
     "@types/node": "26.6.6",

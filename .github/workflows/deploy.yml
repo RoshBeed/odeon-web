@@ -28,9 +28,6 @@ jobs:
           bash scripts/listings.sh download
           # Until the first ingest publishes listings there is nothing to show.
           if [ ! -f data/odeon.sqlite ]; then exit 0; fi
-          # The site downloads the file compressed and unpacks it in the browser.
-          mkdir -p site/public/data
-          gzip --stdout data/odeon.sqlite > site/public/data/odeon.sqlite.gz
           echo "published=true" >> "$GITHUB_OUTPUT"
         env:
           GH_TOKEN: ${{ github.token }}
@@ -41,6 +38,10 @@ jobs:
           cache: npm
           cache-dependency-path: site/package-lock.json
       - run: npm ci
+        if: steps.listings.outputs.published == 'true'
+        working-directory: site
+      # The site downloads the listings as one compressed JSON document.
+      - run: npm run listings
         if: steps.listings.outputs.published == 'true'
         working-directory: site
       - run: npm run build

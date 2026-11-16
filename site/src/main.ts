@@ -1,5 +1,6 @@
 // The interface: a stack of tables over the listings, driven by keys, clicks or taps.
 import { ics } from './calendar';
+import { readChoice, writeChoices } from './choices';
 import { openListings } from './db';
 import * as q from './queries';
 import { formats, place, shortCinema, tagKind, tagLabel, type TagKind } from './tags';
@@ -61,29 +62,23 @@ const app = document.getElementById('app')!;
 const uis = new Map<string, Ui>();
 const narrow = matchMedia('(max-width: 640px)');
 
-// ---- What the visitor has chosen, kept in this browser -------------------
+// ---- What the visitor has chosen, kept in the page's address ---------------
 
-function stored(key: string): Set<string> {
-  try {
-    return new Set(JSON.parse(localStorage.getItem(key) ?? '[]') as string[]);
-  } catch {
-    return new Set(); // storage is blocked or holds something else: start empty
-  }
-}
-const ticks = stored('odeon.cinemas');
-const hidden = stored('odeon.hidden');
+const ticks = readChoice(location.search, 'cinemas');
+const hidden = readChoice(location.search, 'hidden');
 let version = 0;
-function toggle(set: Set<string>, key: string, ids: string[], on?: boolean) {
+/** Put the choices in the address, where a bookmark or a shared link keeps them. */
+function address() {
+  const search = writeChoices({ cinemas: ticks, hidden });
+  if (search !== location.search) history.replaceState(null, '', location.pathname + search + location.hash);
+}
+function toggle(set: Set<string>, ids: string[], on?: boolean) {
   for (const id of ids) {
     if (on ?? !set.has(id)) set.add(id);
     else set.delete(id);
   }
   version += 1; // every remembered count is now stale
-  try {
-    localStorage.setItem(key, JSON.stringify([...set]));
-  } catch (error) {
-    console.warn('Your choices could not be saved in this browser', error);
-  }
+  address();
 }
 
 /** Counts that scan every showing are kept until a choice or the hour changes. */
@@ -225,9 +220,9 @@ function homeView(): View {
   };
   const intro = h('div', { class: 'intro' },
     h('p', {}, "ODEON · what's on, on which screen, and how big it is."),
-    h('p', { class: 'dim phone' }, 'Tick your cinemas in Cinemas or Location and everything shows only those. Your ticks are remembered on this phone.'),
+    h('p', { class: 'dim phone' }, 'Tick your cinemas in Cinemas or Location and everything shows only those. Your ticks are kept in the page address: bookmark it to keep them.'),
     facts([
-      ['Quick start', 'tick your favourite cinemas in Cinemas or whole groups in Location; everything then shows only those. Your ticks are remembered in this browser.'],
+      ['Quick start', 'tick your favourite cinemas in Cinemas or whole groups in Location; everything then shows only those. Your ticks are kept in the page address: bookmark it to keep them.'],
       ['Getting around', 'tap or click a row · or ↑ ↓ move, Enter open, Esc back'],
       ['Every table', 'sort by a heading · search with the box or /'],
       ['Then', 'a film → a cinema → its showtimes → book, or add to your calendar'],
@@ -262,7 +257,7 @@ function filmsView(title = 'Films', filter: q.FilmFilter = {}): View {
 function hideButton(id: string): HTMLElement {
   const isHidden = hidden.has(id);
   return button(isHidden ? 'Show this film again' : 'Hide this film', () => {
-    toggle(hidden, 'odeon.hidden', [id]);
+    toggle(hidden, [id]);
     render();
   });
 }
@@ -305,7 +300,7 @@ function filmView(id: string): View {
     title: film.title,
     intro: filmIntro(film),
     table: (ui) => local(columns, rows, ui),
-    keys: { h: () => { toggle(hidden, 'odeon.hidden', [id]); render(); } },
+    keys: { h: () => { toggle(hidden, [id]); render(); } },
   };
 }
 
@@ -325,7 +320,7 @@ function cinemasView(location?: string): View {
       .map((cinema): Row => ({
         cells: [cinema.name, place(cinema), cinema.films, cinema.showings],
         open: path('cinema', cinema.id),
-        tick: { state: ticks.has(cinema.id) ? 'all' : 'none', toggle: () => toggle(ticks, 'odeon.cinemas', [cinema.id]) },
+        tick: { state: ticks.has(cinema.id) ? 'all' : 'none', toggle: () => toggle(ticks, [cinema.id]) },
       }));
     return local(columns, rows, ui);
   };
@@ -346,7 +341,7 @@ function locationsView(): View {
         open: path('location', name),
         tick: {
           state: ticked === ids.length ? 'all' : ticked ? 'some' : 'none',
-          toggle: () => toggle(ticks, 'odeon.cinemas', ids, ticked !== ids.length),
+          toggle: () => toggle(ticks, ids, ticked !== ids.length),
         },
       };
     });
@@ -557,6 +552,7 @@ function back() {
 /** Build the page for a route. The search box lives here so that typing in it
  *  never replaces it; paint() then redraws only what a keystroke changes. */
 function render() {
+  address(); // going back can land on an address from before a choice changed
   const key = route();
   if (!uis.has(key)) uis.set(key, { order: null, descending: false, text: '', page: 0, selected: 0 });
   const ui = uis.get(key)!;
@@ -733,7 +729,7 @@ document.addEventListener('keydown', (event) => {
     '/': () => app.querySelector<HTMLInputElement>('.tools input')?.focus(),
     b: () => { const row = selectedRow(); if (row?.book) window.open(row.book, '_blank', 'noopener'); },
     c: () => selectedRow()?.calendar?.(),
-    h: () => { const row = selectedRow(); if (row?.film) { toggle(hidden, 'odeon.hidden', [row.film]); paint(); } },
+    h: () => { const row = selectedRow(); if (row?.film) { toggle(hidden, [row.film]); paint(); } },
     ...current.view.keys,
   };
   const action = actions[event.key];

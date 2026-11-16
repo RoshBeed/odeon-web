@@ -229,6 +229,8 @@ function menuView(): View {
     const places = new Set(allCinemas().map(place));
     const [screens, tags, seats] = [allScreens(), experienceTags(), seatTypes()];
     return [
+      // The finder needs room for its columns side by side.
+      ...(narrow.matches ? [] : [{ cells: ['Find showtimes', '', 'choose a day, a film, a cinema and a format together'], open: 'find' }]),
       { cells: ['Films', count(home.films, 'film'), count(home.showings, 'showing')], open: 'films' },
       { cells: ['Cinemas', count(home.allCinemas, 'cinema'), ticks.size ? `${count(ticks.size, 'cinema')} ticked` : 'all'], open: 'cinemas' },
       { cells: ['Location', count(places.size, 'location'), 'browse or tick cinema groups'], open: 'locations' },
@@ -651,6 +653,11 @@ function viewFor(route: string): View {
       if (!film || !cinema) return missing('That film is no longer showing there.');
       return showingsView(`${film.title} · ${shortCinema(cinema)}`, { film: a, cinema: b }, scope([]));
     }
+    case 'find': return {
+      title: 'Find showtimes',
+      intro: h('p', { class: 'empty' }, 'Choose a day, a film, a cinema and a format together; the showtimes that match stay in view. It needs a wide screen.'),
+      table: () => ({ columns: [], rows: [], total: 0 }),
+    };
     default: return missing('There is no such page.');
   }
 }
@@ -780,10 +787,196 @@ function switchLayout() {
   render();
 }
 
+/** The line at the foot of every page: the keys, and how fresh the listings are. */
+function footer(hints: string[]): HTMLElement {
+  const stamp = db.ingested;
+  const old = stamp !== null && Date.now() - Date.parse(stamp) > 8 * 86400000;
+  return h('footer', {},
+    h('span', { class: 'keys' }, ...hints.flatMap((hint) => {
+      const [keys, ...words] = hint.split(' ');
+      return [h('kbd', {}, keys), ` ${words.join(' ')}   `];
+    })),
+    h('span', { class: 'status' },
+      `listings from ${stamp ? day(stamp) : 'no ingest yet'}`,
+      ...(db.fullUntil ? [` · full to ${day(db.fullUntil)}`] : []),
+      ...(old ? [h('span', { class: 'stale' }, ' · more than a week old')] : [])));
+}
+
+// ---- The finder: a day, a film, a cinema and a format chosen together ----
+// Four columns of choices, each headed by All and each counting what the
+// other three leave; the showtimes that match are always in view beside them.
+
+const FINDER: { facet: keyof q.Pick; title: string; width: number }[] = [
+  { facet: 'day', title: 'Day', width: 190 },
+  { facet: 'film', title: 'Film', width: 300 },
+  { facet: 'cinema', title: 'Cinema', width: 210 },
+  { facet: 'format', title: 'Format', width: 190 },
+];
+/** The finder's key handler while it is on screen. */
+let finder: ((event: KeyboardEvent) => void) | null = null;
+
+function showFinder(query: string): (event: KeyboardEvent) => void {
+  const params = new URLSearchParams(query);
+  const whole = (name: string) => {
+    const value = Number(params.get(name) ?? 1);
+    return Number.isInteger(value) && value >= 1 ? value - 1 : 0;
+  };
+  const pick: q.Pick = {};
+  for (const { facet } of FINDER) if (params.get(facet)) pick[facet] = params.get(facet)!;
+  const results = FINDER.length; // the showtimes column comes after the choices
+  let focus = Math.min(whole('col'), results);
+  let row = whole('row');
+  const ui: Ui = { ...PLAIN, page: Math.floor(row / PAGE) };
+  let options: (string | undefined)[][] = [];
+  let table: Table = { columns: [], rows: [], total: 0 };
+
+  const lists = FINDER.map(() => h('ul', { class: 'facet' }));
+  const shows = h('ul', { class: 'cards' });
+  const total = h('span', { class: 'dim' });
+  const detail = h('div', { class: 'column preview' });
+  const columns = [
+    ...FINDER.map(({ title, width }, index) => h('div', { class: 'column', style: `flex-basis: ${width}px` }, bar(title), lists[index])),
+    h('div', { class: 'column' }, bar('Showtimes', total), shows),
+  ];
+  columns[results].addEventListener('scroll', () => {
+    const column = columns[results];
+    if (table.rows.length < table.total && column.scrollTop + column.clientHeight > column.scrollHeight - 600) { ui.page += 1; draw(); }
+  }, { passive: true });
+  document.title = 'Find showtimes · ODEON';
+  app.classList.add('side');
+  app.replaceChildren(
+    h('header', {}, h('h1', {}, link('ODEON', '#/'), h('span', {}, ' — Find showtimes'))),
+    h('div', { class: 'columns finder' }, ...columns, detail),
+    footer(['←→ column', '↑↓ choose', 'Esc all', 'Enter open', 'b book', 'c calendar']),
+  );
+
+  const names = new Map(allCinemas().map((cinema) => [cinema.id, cinema.name]));
+  const today = scope().today;
+  /** How a choice reads, and a note beside its count. */
+  const label: Record<keyof q.Pick, (value: string) => [string, string]> = {
+    day: (value) => [day(value) + (value === today ? ' · today' : ''), db.fullUntil && value > db.fullUntil ? 'advance' : ''],
+    film: (value) => {
+      const film = q.film(db, value);
+      return [film?.title ?? value, film?.imdb ? film.imdb.toFixed(1) : ''];
+    },
+    cinema: (value) => [shortCinema(names.get(value) ?? value), ''],
+    format: (value) => [tagLabel(value), ''],
+  };
+
+  function write() {
+    const parts = [
+      ...FINDER.flatMap(({ facet }) => (pick[facet] ? [`${facet}=${encodeURIComponent(pick[facet]!)}`] : [])),
+      focus ? `col=${focus + 1}` : '',
+      row ? `row=${row + 1}` : '',
+    ].filter(Boolean);
+    const hash = '#/find' + (parts.length ? '?' + parts.join('&') : '');
+    if (hash !== location.hash) history.replaceState(null, '', location.pathname + location.search + hash);
+    return hash;
+  }
+
+  /** Mark the focused column and the highlighted showtime, and show that showtime's page. */
+  function mark() {
+    columns.forEach((column, index) => column.classList.toggle('focused', index === focus));
+    shows.querySelector('.selected')?.classList.remove('selected');
+    shows.querySelectorAll('li:not(.day)')[row]?.classList.add('selected');
+    for (const column of columns) column.querySelector('.selected')?.scrollIntoView({ block: 'nearest' });
+    const shown = table.rows[row];
+    if (shown?.open) {
+      const view = viewFor(shown.open);
+      const near = view.table({ ...PLAIN });
+      detail.replaceChildren(
+        bar(view.title),
+        ...(near.columns.length ? [cardList(near, -1, (index) => leave(near.rows[index].open!))] : []),
+        ...(view.intro ? [view.intro] : []));
+    } else {
+      detail.replaceChildren();
+    }
+    clearTimeout(noting); // the address follows after a pause, as elsewhere
+    noting = window.setTimeout(write, 300);
+  }
+
+  function draw() {
+    const found = q.counts(db, scope(), pick);
+    options = FINDER.map(({ facet }, index) => {
+      const count = found[facet];
+      let values = [...count.keys()];
+      if (facet === 'format') values = values.filter((tag) => ['Picture', 'Language'].includes(tagKind(tag))).sort((a, b) => count.get(b)! - count.get(a)!);
+      else values.sort((a, b) => label[facet](a)[0].toLowerCase().localeCompare(label[facet](b)[0].toLowerCase()));
+      if (facet === 'day') values.sort();
+      const picked = pick[facet];
+      if (picked && !values.includes(picked)) values.unshift(picked); // a choice the others have emptied stays in view
+      const all = [undefined, ...values];
+      lists[index].replaceChildren(...all.map((value) => {
+        const [name, note] = value === undefined ? ['All', ''] : label[facet](value);
+        const item = h('li', { class: [value === picked ? 'selected' : '', value === undefined ? 'pinned' : ''].join(' ') },
+          h('strong', {}, name),
+          h('span', { class: 'dim' }, [note, value === undefined ? '' : (count.get(value) ?? 0).toLocaleString('en-GB')].filter(Boolean).join(' · ')));
+        item.onclick = () => { focus = index; choose(facet, value); };
+        return item;
+      }));
+      return all;
+    });
+    table = showingsView('Showtimes', { from: pick.day, to: pick.day, film: pick.film, cinema: pick.cinema, tag: pick.format }).table(ui);
+    row = Math.min(row, Math.max(table.rows.length - 1, 0));
+    total.textContent = table.total.toLocaleString('en-GB');
+    shows.replaceChildren(
+      ...table.rows.flatMap((item, index) => cardNodes(table.columns, item, index, row, (at) => { focus = results; row = at; mark(); })),
+      ...(table.rows.length ? [] : [h('li', { class: 'day' }, 'Nothing matches all four.')]));
+    mark();
+  }
+
+  function choose(facet: keyof q.Pick, value: string | undefined) {
+    if (value === undefined) delete pick[facet];
+    else pick[facet] = value;
+    row = 0;
+    ui.page = 0;
+    draw();
+  }
+  /** Open a page from here, leaving the finder as it stands to come back to. */
+  function leave(target: string) {
+    clearTimeout(noting);
+    location.hash = `${write()}|${target}`;
+  }
+
+  draw();
+  return (event) => {
+    const step = ({ ArrowDown: 1, j: 1, ArrowUp: -1, k: -1, PageDown: 10, PageUp: -10, Home: -Infinity, End: Infinity } as Record<string, number>)[event.key];
+    const shown = table.rows[row];
+    const within = (value: number, length: number) => Math.max(0, Math.min(length - 1, value));
+    if (step !== undefined && focus < results) {
+      const { facet } = FINDER[focus];
+      choose(facet, options[focus][within(options[focus].indexOf(pick[facet]) + step, options[focus].length)]);
+    } else if (step !== undefined) {
+      const past = Number.isFinite(step) && row + step > table.rows.length - 1 && table.rows.length < table.total;
+      if (past) ui.page += 1;
+      row = past ? row + step : within(row + step, table.rows.length);
+      if (past) draw();
+      else mark();
+    } else if (event.key === 'ArrowRight' || event.key === 'Enter') {
+      if (focus < results) { focus = event.key === 'Enter' ? results : focus + 1; mark(); }
+      else if (shown?.open) leave(shown.open);
+    } else if (event.key === 'ArrowLeft' || event.key === 'Backspace') {
+      if (focus) { focus -= 1; mark(); }
+      else { clearTimeout(noting); write(); location.hash = '#/browse'; }
+    } else if (event.key === 'Escape') {
+      if (focus < results && pick[FINDER[focus].facet]) choose(FINDER[focus].facet, undefined);
+      else { clearTimeout(noting); write(); location.hash = '#/browse'; }
+    } else if (event.key === 'b' && shown?.book) {
+      window.open(shown.book, '_blank', 'noopener');
+    } else if (event.key === 'c' && shown?.calendar) {
+      shown.calendar();
+    } else {
+      return;
+    }
+    event.preventDefault();
+  };
+}
+
 /** Build the page for a route. The search box lives here so that typing in it
  *  never replaces it; paint() then redraws only what a keystroke changes. */
 function render() {
   address(); // going back can land on an address from before a choice changed
+  finder = null;
   const { trail: led, route: key, ui } = readPage(location.hash);
   const side = columns() && key !== '';
   // The first column is always the menu, however this address was reached.
@@ -795,6 +988,10 @@ function render() {
     return;
   }
   if (!db) return; // still downloading; load() draws the page when it arrives
+  if (key === 'find' && !narrow.matches) {
+    finder = showFinder(location.hash.split('|').pop()!.split('?')[1] ?? '');
+    return;
+  }
   const view = viewFor(key);
   document.title = key ? `${view.title} · ODEON` : 'ODEON';
   const search = h('input', { type: 'search', placeholder: side ? 'Search' : 'Search this table', 'aria-label': 'Search this table' }) as HTMLInputElement;
@@ -805,9 +1002,7 @@ function render() {
     // Highlight the first match, not the All row above it, so that Enter opens what was searched for.
     if (ui.text && current.table.rows[0]?.pinned && current.table.rows.length > 1) move(1);
   };
-  const stamp = db.ingested;
   const hints = ['↑↓ move', 'Enter open', 'Esc back', '/ search', 's sort', 'Space tick', 'h hide film', 't trailer', 'b book', 'c calendar', 'v columns'];
-  const old = stamp !== null && Date.now() - Date.parse(stamp) > 8 * 86400000;
   const tools = h('div', { class: 'tools' }, search, h('span', { class: 'sorter' }), h('span', { class: 'pager' }));
   const list = h('div', { class: 'scroll' });
   // A column is its heading line, with the search and sort in it, then its list, then any details.
@@ -828,15 +1023,7 @@ function render() {
           h('div', { class: 'column focused' }, ...parts),
           h('div', { class: 'column preview' }))]
       : parts),
-    h('footer', {},
-      h('span', { class: 'keys' }, ...hints.flatMap((hint) => {
-        const [keys, ...words] = hint.split(' ');
-        return [h('kbd', {}, keys), ` ${words.join(' ')}   `];
-      })),
-      h('span', { class: 'status' },
-        `listings from ${stamp ? day(stamp) : 'no ingest yet'}`,
-        ...(db.fullUntil ? [` · full to ${day(db.fullUntil)}`] : []),
-        ...(old ? [h('span', { class: 'stale' }, ' · more than a week old')] : []))),
+    footer(hints),
   );
   current = { trail: side ? trail : [], route: key, view, ui, table: { columns: [], rows: [], total: 0 } };
   paint();
@@ -990,7 +1177,9 @@ function tick() {
 }
 
 document.addEventListener('keydown', (event) => {
-  if (!current || event.metaKey || event.ctrlKey || event.altKey) return;
+  if (event.metaKey || event.ctrlKey || event.altKey) return;
+  if (finder) return finder(event);
+  if (!current) return;
   const target = event.target as HTMLElement;
   if (target instanceof HTMLInputElement) {
     if (event.key === 'Escape' || event.key === 'Enter' || event.key === 'ArrowDown') {

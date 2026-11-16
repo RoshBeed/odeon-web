@@ -209,6 +209,19 @@ describe('queries', () => {
     expect(q.around(db, { ...scope, hidden: ['F2'] }, '155', 'A').after).toEqual([]);
   });
 
+  test('the finder counts each column with the other columns applied', () => {
+    const entries = (pick: q.Pick) => Object.fromEntries(Object.entries(q.counts(db, scope, pick)).map(([name, map]) => [name, Object.fromEntries(map)]));
+    expect(entries({})).toEqual({
+      day: { '2026-11-11': 1, '2026-11-14': 1, '2026-11-20': 1 },
+      film: { F1: 2, F2: 1 },
+      cinema: { '155': 2, '001': 1 },
+      format: { IMAX: 1 },
+    });
+    // Choosing a film narrows the days and cinemas, but not the list of films itself.
+    expect(entries({ film: 'F2' })).toEqual({ day: { '2026-11-14': 1 }, film: { F1: 2, F2: 1 }, cinema: { '155': 1 }, format: {} });
+    expect(entries({ format: 'IMAX', cinema: '001' }).film).toEqual({});
+  });
+
   test('the last successful ingest is reported', () => {
     expect(db.ingested).toBe('2026-11-10T05:00:00Z');
     // The week published on Tuesday 10 November runs to Thursday 19.

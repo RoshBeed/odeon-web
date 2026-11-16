@@ -431,6 +431,34 @@ const asShowing = (show: Show): Showing => ({
   capacity: show.capacity, experiences: show.experiences, soldOut: show.soldOut,
 });
 
+/** One choice in each of the finder's columns; a column left out means all. */
+export interface Pick {
+  day?: string;
+  film?: string;
+  cinema?: string;
+  /** A tag exactly as ODEON names it. */
+  format?: string;
+}
+
+/** For the finder: how many showings each day, film, cinema and tag would
+ *  give, with the choices made in the other three columns applied. */
+export function counts(l: Listings, scope: Scope, pick: Pick): Record<keyof Pick, Map<string, number>> {
+  const found = { day: new Map<string, number>(), film: new Map<string, number>(), cinema: new Map<string, number>(), format: new Map<string, number>() };
+  const add = (map: Map<string, number>, key: string) => map.set(key, (map.get(key) ?? 0) + 1);
+  for (const show of upcoming(l, scope)) {
+    if (!show.film || !show.cinema) continue;
+    const day = !pick.day || show.date === pick.day;
+    const film = !pick.film || show.filmId === pick.film;
+    const cinema = !pick.cinema || show.cinemaId === pick.cinema;
+    const format = !pick.format || show.experiences.includes(pick.format);
+    if (film && cinema && format) add(found.day, show.date);
+    if (day && cinema && format) add(found.film, show.filmId);
+    if (day && film && format) add(found.cinema, show.cinemaId);
+    if (day && film && cinema) for (const tag of show.experiences) add(found.format, tag);
+  }
+  return found;
+}
+
 export interface Neighbour extends Showing {
   /** Minutes between one film ending and the other's advertised start. */
   gap: number;

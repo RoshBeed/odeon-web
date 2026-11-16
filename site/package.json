@@ -7,7 +7,7 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "test": "vitest run",
-    "listings": "node scripts/export.ts ../data/odeon.sqlite public/data/listings.json.gz"
+    "listings": "node scripts/export.ts ../data/odeon.sqlite public/data"
   },
   "devDependencies": {
     "@types/node": "26.6.6",

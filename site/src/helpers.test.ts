@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest';
 import { ics } from './calendar';
-import { readChoice, writeChoices } from './choices';
+import { needsEveryCinema, readChoice, writeChoices } from './choices';
 import type { ShowingDetail } from './queries';
 import { formats, place, tagKind, tagLabel } from './tags';
 
@@ -47,4 +47,14 @@ test('choices are read from and written to the address', () => {
   expect(writeChoices({ cinemas: new Set(['155', '090']), hidden: new Set(['HO 1']) })).toBe('?cinemas=155,090&hidden=HO%201');
   expect(writeChoices({ cinemas: new Set(), hidden: new Set(['HO1']) })).toBe('?hidden=HO1');
   expect(writeChoices({ cinemas: new Set(), hidden: new Set() })).toBe('');
+});
+
+test("Greater London's listings will do until a page is about another cinema", () => {
+  const london = new Set(['155', '090']);
+  expect(['', 'films', 'all', 'cinema/155', 'film/F1/090', 'film/F1'].map((route) => needsEveryCinema(route, london))).toEqual(
+    [false, false, false, false, false, false]);
+  expect(['cinemas', 'locations', 'location/Bath', 'cinema/001', 'show/001/1', 'film/F1/001'].map((route) => needsEveryCinema(route, london))).toEqual(
+    [true, true, true, true, true, true]);
+  expect(needsEveryCinema('', new Set())).toBe(true);
+  expect(needsEveryCinema('', new Set(['155', '001']))).toBe(true);
 });

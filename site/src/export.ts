@@ -61,6 +61,10 @@ export function exportListings(sqlite: DatabaseSync, only?: Set<string>): Data {
       .filter(([cinema]) => !only || only.has(cinema))
       .map(([cinema, id]): [string, string] => [cinema, film(id)]),
     screens: all('SELECT cinema_id, screen_id, capacity FROM screens') as unknown as Data['screens'],
+    // From every cinema's showings, so that a film is an event whichever cinemas are exported.
+    events: [...new Set(all(
+      `SELECT DISTINCT s.film_id FROM screenings s, json_each(s.experiences) tag WHERE tag.value = 'Event Cinema'`,
+    ).map(([id]) => film(id)))],
     // In the order the site lists them, which it relies on.
     rows: all(
       `SELECT cinema_id, id, film_id, business_date, starts_at, time, film_starts_at, film_ends_at,

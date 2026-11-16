@@ -9,6 +9,8 @@ export interface Data {
   films: Film[];
   /** Which cinemas have announced which films: cinema ID, film ID. */
   availability: [string, string][];
+  /** Films with a showing ODEON tags Event Cinema, at any cinema: film IDs. */
+  events: string[];
   /** Seats per screen: cinema ID, screen ID, capacity. */
   screens: [string, string, number][];
   /** The showings, ordered by start, then cinema ID, then ID. Each is a list of
@@ -58,7 +60,7 @@ export interface Listings {
   availability: [string, string][];
   /** Every showing, in the order of `Data.rows`. */
   shows: Show[];
-  /** Films with a showing tagged Event Cinema. */
+  /** Films with a showing tagged Event Cinema, at any cinema. */
   events: Set<string>;
   /** Showings by cinema ID and ID; made the first time one is asked for. */
   byId?: Map<string, Show>;
@@ -90,7 +92,7 @@ export function open(data: Data): Listings {
     cinemas: data.cinemas,
     availability: data.availability,
     shows,
-    events: new Set(shows.filter(isEvent).map((show) => show.filmId)),
+    events: new Set(data.events),
   };
 }
 
@@ -154,8 +156,6 @@ const by = <T>(...keys: ((item: T) => string | number)[]) => (a: T, b: T) => {
   }
   return 0;
 };
-
-const isEvent = (show: Show) => show.experiences.includes('Event Cinema');
 
 /** Showings that have not started; with `scoped`, only the visitor's cinemas, less their hidden films. */
 function upcoming(l: Listings, scope: Scope, scoped = true): Show[] {

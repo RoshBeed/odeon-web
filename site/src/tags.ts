@@ -47,3 +47,13 @@ export function place(cinema: { id: string; name: string; city: string }): strin
 }
 
 export const shortCinema = (name: string) => name.replace(/^London /, '');
+
+/** The youngest age a certificate admits, to sort by: U, PG, 12A, 15, 18.
+ *  Null for a film not yet rated, which sorts last. */
+export function certificateAge(certificate: string): number | null {
+  const [first = ''] = certificate.trim().split(' '); // "PG Ire"
+  if (first === 'U' || first === 'G') return 0;
+  if (first === 'PG') return 8;
+  const age = parseInt(first, 10); // 12A, 15, 15A, 16, 18
+  return Number.isNaN(age) ? null : age;
+}

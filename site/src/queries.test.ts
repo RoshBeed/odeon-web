@@ -166,7 +166,7 @@ describe('queries', () => {
     screening('001-2', '001', 'F1-IE', '2026-11-21', '20:00');
     screening('155-3', '155', 'F4', '2026-11-12', '19:00', { experiences: '["Event Cinema"]' });
     screening('155-4', '155', 'F4', '2026-11-13', '19:00', { experiences: '["Event Cinema"]' });
-    screening('001-3', '001', 'F4-IE', '2026-11-12', '19:00', { experiences: '["Event Cinema"]' });
+    screening('001-3', '001', 'F4-IE', '2026-11-12', '19:00'); // an event even where a showing lacks the tag
     db = q.open(exportListings(sqlite));
     expect(q.films(db, scope).map((film) => [film.id, film.title, film.showings, film.imdb])).toEqual([
       ['F1', 'Dune', 3, 8.4],

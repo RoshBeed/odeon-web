@@ -3,7 +3,7 @@ import { ics } from './calendar';
 import { needsEveryCinema, PLAIN, readChoice, readPage, writeChoices, writePage, type Ui } from './choices';
 import { openListings } from './db';
 import * as q from './queries';
-import { formats, place, shortCinema, tagKind, tagLabel, type TagKind } from './tags';
+import { certificateAge, formats, place, shortCinema, tagKind, tagLabel, type TagKind } from './tags';
 
 const BOOKING = 'https://www.odeon.co.uk/ticketing/seat-picker/?showtimeId=';
 const PAGE = 100;
@@ -61,14 +61,14 @@ const narrow = matchMedia('(max-width: 640px)');
 
 const ticks = readChoice(location.search, 'cinemas');
 const hidden = readChoice(location.search, 'hidden');
-/** What the visitor has left out altogether: `events`. */
-const without = readChoice(location.search, 'without');
+/** What the visitor has asked to see that is otherwise left out: `events`. */
+const extras = readChoice(location.search, 'show');
 /** How the pages are laid out: `columns` puts them side by side. */
 const layout = readChoice(location.search, 'view');
 let version = 0;
 /** Put the choices in the address, where a bookmark or a shared link keeps them. */
 function address() {
-  const search = writeChoices({ cinemas: ticks, hidden, without, view: layout });
+  const search = writeChoices({ cinemas: ticks, hidden, show: extras, view: layout });
   if (search !== location.search) history.replaceState(null, '', location.pathname + search + location.hash);
 }
 function toggle(set: Set<string>, ids: string[], on?: boolean) {
@@ -97,7 +97,7 @@ function scope(cinemas: string[] = [...ticks]): q.Scope {
   return {
     cinemas,
     hidden: [...hidden],
-    noEvents: without.has('events'),
+    noEvents: !extras.has('events'),
     now: new Date().toISOString().slice(0, 19) + 'Z',
     today: new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/London' }).format(new Date()),
   };
@@ -194,7 +194,6 @@ function homeView(): View {
     const home = q.home(db, scope());
     const [first, last] = q.weekend(scope().today);
     const places = new Set(allCinemas().map(place));
-    const events = !without.has('events');
     const [screens, tags, seats] = [allScreens(), experienceTags(), seatTypes()];
     return [
       { cells: ['Films', count(home.films, 'film'), count(home.showings, 'showing')], open: 'films' },
@@ -217,17 +216,14 @@ function homeView(): View {
       }),
       { cells: ['All showtimes', count(home.showings, 'screening'), 'every film, cinema and day'], open: 'all' },
       ...(hidden.size ? [{ cells: ['Hidden films', count(hidden.size, 'film'), 'show them again'], open: 'hidden' }] : []),
-      {
-        cells: ['Event cinema', events ? 'shown' : 'hidden', 'concerts, theatre, opera and other specials · untick to leave them out'],
-        tick: { state: events ? 'all' : 'none', toggle: () => toggle(without, ['events']) },
-      },
+      { cells: ['Settings', '', 'your cinemas, event cinema, layout · then bookmark the page'], open: 'settings' },
     ];
   };
   const intro = h('div', { class: 'intro' },
     h('p', {}, "ODEON · what's on, on which screen, and how big it is."),
-    h('p', { class: 'dim phone' }, 'Tick your cinemas in Cinemas or Location and everything shows only those. Your ticks are kept in the page address: bookmark it to keep them.'),
+    h('p', { class: 'dim phone' }, 'Tick your cinemas in Cinemas or Location and everything shows only those. Then bookmark the page: its address holds your choices.'),
     facts([
-      ['Quick start', 'tick your favourite cinemas in Cinemas or whole groups in Location; everything then shows only those. Your ticks are kept in the page address: bookmark it to keep them.'],
+      ['Quick start', 'tick your favourite cinemas in Cinemas or whole groups in Location; everything then shows only those. Then bookmark the page: its address holds your choices.'],
       ['Getting around', 'tap or click a row · or ↑ ↓ move, Enter open, Esc back'],
       ['Every table', 'sort by a heading · search with the box or /'],
       ['Then', 'a film → a cinema → its showtimes → book, or add to your calendar'],
@@ -246,7 +242,7 @@ function filmsView(title = 'Films', filter: q.FilmFilter = {}): View {
   const table = (ui: Ui) => {
     const rows = remember('films/' + JSON.stringify(filter), () => q.films(db, scope(), filter).map((film): Row => ({
       cells: [film.title, film.certificate || 'TBC', film.runtime, film.imdb?.toFixed(1) ?? null, film.metacritic, film.cinemas, film.showings, when(film.next)],
-      values: [film.title, film.certificate, film.runtime, film.imdb, film.metacritic, film.cinemas, film.showings, film.next],
+      values: [film.title, certificateAge(film.certificate), film.runtime, film.imdb, film.metacritic, film.cinemas, film.showings, film.next],
       open: path('film', film.id),
       film: film.id,
       card: {
@@ -317,6 +313,42 @@ function hiddenView(): View {
   return { title: 'Hidden films', intro, table };
 }
 
+function settingsView(): View {
+  const columns: Column[] = [{ label: 'Setting' }, { label: 'Now' }, { label: 'What it does', wrap: true }];
+  const rows = (): Row[] => [
+    { cells: ['Cinemas', ticks.size ? `${count(ticks.size, 'cinema')} ticked` : 'every cinema', 'tick the ones you go to; everything then shows only those'], open: 'cinemas' },
+    { cells: ['Location', '', 'tick every cinema in a place at once, such as Greater London'], open: 'locations' },
+    {
+      cells: ['Event cinema', extras.has('events') ? 'shown' : 'hidden', 'concerts, theatre, opera and other specials, which ODEON marks Event Cinema'],
+      tick: { state: extras.has('events') ? 'all' : 'none', toggle: () => toggle(extras, ['events']) },
+    },
+    {
+      cells: ['Columns', layout.has('columns') ? 'on' : 'off', 'show pages side by side, as the column view in Finder does (not on a phone)'],
+      tick: { state: layout.has('columns') ? 'all' : 'none', toggle: switchLayout },
+    },
+    { cells: ['Hidden films', count(hidden.size, 'film'), 'films you hid with h or the Hide button; open to show them again'], open: 'hidden' },
+  ];
+  const copied = h('span', { class: 'dim' });
+  const intro = h('div', { class: 'intro' },
+    h('p', {}, 'Nothing is saved in this browser. Every choice here, and how each page is sorted and searched, is part of the page address.'),
+    h('p', {}, 'Set things up, then bookmark the page. Opening the bookmark brings it all back, on any device.'),
+    h('p', { class: 'actions' },
+      button('Copy the address', () => {
+        navigator.clipboard.writeText(location.href).then(
+          () => copied.replaceChildren('Copied.'),
+          () => copied.replaceChildren('Could not copy; use the address bar.'),
+        );
+      }),
+      button('Clear every choice', () => {
+        for (const chosen of [ticks, hidden, extras, layout]) chosen.clear();
+        version += 1;
+        render();
+      }),
+      copied),
+  );
+  return { title: 'Settings', intro, table: (ui) => local(columns, rows(), ui) };
+}
+
 function cinemasView(location?: string): View {
   const columns: Column[] = [{ label: 'Cinema', wrap: true }, { label: 'Location', wide: true }, { label: 'Films', right: true }, { label: 'Showings', right: true }];
   const table = (ui: Ui) => {
@@ -360,7 +392,7 @@ function soonView(): View {
   const columns: Column[] = [{ label: 'Film', wrap: true }, { label: 'Cert' }, { label: 'Opens' }, { label: 'Cinemas', right: true }];
   const rows = q.soon(db, scope()).map((film): Row => ({
     cells: [film.title, film.certificate || 'TBC', fullDate(film.release), film.cinemas],
-    values: [film.title, film.certificate, film.release, film.cinemas],
+    values: [film.title, certificateAge(film.certificate), film.release, film.cinemas],
     open: path('film', film.id),
     film: film.id,
   }));
@@ -395,8 +427,11 @@ function seatsView(): View {
 function facetView(title: string, kind: 'certificate' | 'person' | 'genre' | 'distributor'): View {
   const people = kind === 'person';
   const columns: Column[] = [{ label: title, wrap: true }, ...(people ? [{ label: 'Role' }] : []), { label: 'Films', right: true }, { label: 'Showings', right: true }];
-  const rows = facetRows(kind).map((row): Row => ({
+  const age = (name: string) => certificateAge(name) ?? 99;
+  const found = kind === 'certificate' ? [...facetRows(kind)].sort((a, b) => age(a.name) - age(b.name)) : facetRows(kind);
+  const rows = found.map((row): Row => ({
     cells: [row.name, ...(people ? [row.role] : []), row.films, row.showings],
+    ...(kind === 'certificate' ? { values: [certificateAge(row.name), row.films, row.showings] } : {}),
     open: path('by', kind, row.name),
   }));
   return { title, table: (ui) => local(columns, rows, ui) };
@@ -501,6 +536,7 @@ function viewFor(route: string): View {
     case '': return homeView();
     case 'films': return filmsView();
     case 'hidden': return hiddenView();
+    case 'settings': return settingsView();
     case 'cinemas': return cinemasView();
     case 'locations': return locationsView();
     case 'location': return cinemasView(a);
@@ -675,6 +711,7 @@ function render() {
   app.replaceChildren(
     h('header', {},
       ...(key ? [button('← Back', back), link('Start', '#/')] : []),
+      ...(key === 'settings' ? [] : [link('Settings', '#/settings')]),
       h('h1', {}, 'ODEON ', h('span', {}, '— ' + view.title)),
       ...(narrow.matches ? [] : [button(side ? 'View as pages' : 'View as columns', switchLayout)])),
     ...(side
@@ -810,6 +847,7 @@ const selectedRow = (): Row | undefined => current.table.rows[current.ui.selecte
 function open() {
   const row = selectedRow();
   if (row?.open) go(row.open);
+  else if (row?.tick) tick(); // a setting: opening it switches it
 }
 function tick() {
   const row = selectedRow();

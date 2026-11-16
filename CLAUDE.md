@@ -7,6 +7,8 @@
 - The schema lives in `ingest/src/odeon_ingest/store.py`. The site's tests read it from there,
   so change the schema and `site/src/export.ts` together. `site/src/queries.ts` answers every
   question with a loop over the showings; keep key presses free of anything slower.
+- Films with a showing ODEON tags `Event Cinema` are left out unless the address has
+  `?show=events`. That tag is the only marker of such screenings in ODEON's data.
 - ODEON lists each film twice, once for the UK and once for Ireland. The export merges films
   whose titles match apart from case and punctuation into the edition with the most showings.
 - The file is both what the site shows and the ingest's only state between runs (release week,

@@ -2,7 +2,7 @@ import { expect, test } from 'vitest';
 import { ics } from './calendar';
 import { needsEveryCinema, readChoice, readPage, writeChoices, writePage } from './choices';
 import type { ShowingDetail } from './queries';
-import { formats, place, tagKind, tagLabel } from './tags';
+import { certificateAge, formats, place, tagKind, tagLabel } from './tags';
 
 test('tags are grouped and renamed for people', () => {
   expect(['IMAX 3D_Web', 'Hindi (Audio)', 'English (Sub)', 'Audio Described', '£5 Web', 'Kids', 'Recliner'].map(tagKind)).toEqual([
@@ -71,4 +71,10 @@ test('a page carries its sort, search, page and row in the address', () => {
   expect(readPage('#/?row=2|films?sort=3|film/F1')).toEqual({ trail: ['?row=2', 'films?sort=3'], route: 'film/F1', ui: plain });
   expect(writePage('', plain)).toBe('#/');
   expect(readPage('#/films?sort=x&page=-2&row=0').ui).toEqual({ ...plain, order: 0 });
+});
+
+test('certificates sort by age, with unrated films last', () => {
+  const sorted = ['18', 'TBC', 'PG', '12A', 'U', '15', '', 'PG Ire', '15A', 'G']
+    .sort((a, b) => (certificateAge(a) ?? 99) - (certificateAge(b) ?? 99));
+  expect(sorted).toEqual(['U', 'G', 'PG', 'PG Ire', '12A', '15', '15A', '18', 'TBC', '']);
 });

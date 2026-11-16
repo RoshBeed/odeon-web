@@ -12,7 +12,8 @@ from ODEON into one SQLite file. The site is plain files on GitHub Pages; the
 browser downloads the listings once (under 1 MB, less when only Greater London
 cinemas are ticked) and keeps them in memory. Cinemas
 you tick and films you hide are kept in the page's address, so a bookmark or a
-shared link carries them. It works on a phone
+shared link carries them; the Settings page gathers those choices. Concerts,
+theatre and other Event Cinema screenings are left out unless you ask for them. It works on a phone
 by tapping, and on a computer by keyboard or mouse.
 
 ## Using the site

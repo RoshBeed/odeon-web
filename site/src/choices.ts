@@ -35,15 +35,19 @@ export interface Ui {
 }
 
 /** A page and how it is being looked at, from the address after the `#`:
- *  `#/films?sort=3&desc=1&q=wick&page=2&row=5`. Pages and rows count from 1 there. */
-export function readPage(hash: string): { route: string; ui: Ui } {
-  const [route, query = ''] = hash.replace(/^#\/?/, '').split('?');
+ *  `#/films?sort=3&desc=1&q=wick&page=2&row=5`. Pages and rows count from 1 there.
+ *  The columns view lists the pages that led here first, each written the same
+ *  way and separated by `|`; those come back as `trail`. */
+export function readPage(hash: string): { trail: string[]; route: string; ui: Ui } {
+  const trail = hash.replace(/^#\/?/, '').split('|');
+  const [route, query = ''] = trail.pop()!.split('?');
   const params = new URLSearchParams(query);
   const number = (name: string, missing: number) => {
     const value = Number(params.get(name) ?? missing);
     return Number.isInteger(value) && value >= 0 ? value : missing;
   };
   return {
+    trail,
     route,
     ui: {
       order: params.has('sort') ? number('sort', 0) : null,
@@ -55,7 +59,9 @@ export function readPage(hash: string): { route: string; ui: Ui } {
   };
 }
 
-export function writePage(route: string, ui: Ui): string {
+export const PLAIN: Ui = { order: null, descending: false, text: '', page: 0, selected: 0 };
+
+export function writePage(route: string, ui: Ui = PLAIN, trail: string[] = []): string {
   const parts = [
     ui.order === null ? '' : `sort=${ui.order}`,
     ui.descending ? 'desc=1' : '',
@@ -63,5 +69,5 @@ export function writePage(route: string, ui: Ui): string {
     ui.page ? `page=${ui.page + 1}` : '',
     ui.selected ? `row=${ui.selected + 1}` : '',
   ].filter(Boolean);
-  return '#/' + route + (parts.length ? '?' + parts.join('&') : '');
+  return '#/' + [...trail, route + (parts.length ? '?' + parts.join('&') : '')].join('|');
 }

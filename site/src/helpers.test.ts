@@ -1,5 +1,6 @@
 import { expect, test } from 'vitest';
 import { ics } from './calendar';
+import { readChoice, writeChoices } from './choices';
 import type { ShowingDetail } from './queries';
 import { formats, place, tagKind, tagLabel } from './tags';
 
@@ -37,4 +38,13 @@ test('a calendar entry covers the film, with the cinema as its place', () => {
 test('without film times the entry starts after the adverts and lasts the runtime', () => {
   const file = ics({ ...show, filmStartsAt: null, filmEndsAt: null, runtime: 100 }, new Date());
   expect(file).toContain('DTSTART:20261112T182500Z\r\nDTEND:20261112T200500Z');
+});
+
+test('choices are read from and written to the address', () => {
+  expect([...readChoice('?cinemas=155,090&hidden=HO1', 'cinemas')]).toEqual(['155', '090']);
+  expect([...readChoice('?cinemas=155%2C090', 'cinemas')]).toEqual(['155', '090']);
+  expect(readChoice('', 'cinemas').size).toBe(0);
+  expect(writeChoices({ cinemas: new Set(['155', '090']), hidden: new Set(['HO 1']) })).toBe('?cinemas=155,090&hidden=HO%201');
+  expect(writeChoices({ cinemas: new Set(), hidden: new Set(['HO1']) })).toBe('?hidden=HO1');
+  expect(writeChoices({ cinemas: new Set(), hidden: new Set() })).toBe('');
 });

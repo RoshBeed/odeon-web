@@ -10,7 +10,8 @@ be added to your calendar.
 There is no server. Once a week a GitHub Actions workflow fetches the listings
 from ODEON into one SQLite file. The site is plain files on GitHub Pages; the
 browser downloads the listings once (under 1 MB) and keeps them in memory. Cinemas
-you tick and films you hide are remembered in your browser. It works on a phone
+you tick and films you hide are kept in the page's address, so a bookmark or a
+shared link carries them. It works on a phone
 by tapping, and on a computer by keyboard or mouse.
 
 ## Using the site

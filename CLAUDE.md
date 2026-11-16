@@ -10,8 +10,9 @@
   run history, screen sizes). It is published as the `data` release asset, never committed.
 - Keep ODEON traffic minimal: one ingest per release week, no retry loops, and never fetch
   per-screening live data. Tests use a fake ODEON.
-- There is no server and no secret in the site. Visitor settings stay in the browser
-  (`localStorage`).
+- There is no server and no secret in the site. Visitor choices (ticked cinemas, hidden films)
+  live in the page's address (`?cinemas=…&hidden=…`), so a bookmark keeps them; nothing is
+  stored in the browser.
 - This repository is public. Never commit credentials; the tailnet identity and the OMDb key are
   GitHub Actions secrets.
 - Ship through a pull request and CI. The Deploy workflow publishes `main` to GitHub Pages.

@@ -66,10 +66,12 @@ const narrow = matchMedia('(max-width: 640px)');
 
 const ticks = readChoice(location.search, 'cinemas');
 const hidden = readChoice(location.search, 'hidden');
+/** What the visitor has left out altogether: `events`. */
+const without = readChoice(location.search, 'without');
 let version = 0;
 /** Put the choices in the address, where a bookmark or a shared link keeps them. */
 function address() {
-  const search = writeChoices({ cinemas: ticks, hidden });
+  const search = writeChoices({ cinemas: ticks, hidden, without });
   if (search !== location.search) history.replaceState(null, '', location.pathname + search + location.hash);
 }
 function toggle(set: Set<string>, ids: string[], on?: boolean) {
@@ -98,6 +100,7 @@ function scope(cinemas: string[] = [...ticks]): q.Scope {
   return {
     cinemas,
     hidden: [...hidden],
+    noEvents: without.has('events'),
     now: new Date().toISOString().slice(0, 19) + 'Z',
     today: new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/London' }).format(new Date()),
   };
@@ -190,10 +193,11 @@ const allCinemas = () => remember('cinemas', () => q.cinemas(db, scope()));
 const some = (names: string[]) => names.slice(0, 3).join(', ') + (names.length > 3 ? ', …' : '');
 
 function homeView(): View {
-  const home = q.home(db, scope());
-  const [first, last] = q.weekend(scope().today);
-  const places = new Set(allCinemas().map(place));
   const rows = (): Row[] => {
+    const home = q.home(db, scope());
+    const [first, last] = q.weekend(scope().today);
+    const places = new Set(allCinemas().map(place));
+    const events = !without.has('events');
     const [screens, tags, seats] = [allScreens(), experienceTags(), seatTypes()];
     return [
       { cells: ['Films', count(home.films, 'film'), count(home.showings, 'showing')], open: 'films' },
@@ -216,6 +220,10 @@ function homeView(): View {
       }),
       { cells: ['All showtimes', count(home.showings, 'screening'), 'every film, cinema and day'], open: 'all' },
       ...(hidden.size ? [{ cells: ['Hidden films', count(hidden.size, 'film'), 'show them again'], open: 'hidden' }] : []),
+      {
+        cells: ['Event cinema', events ? 'shown' : 'hidden', 'concerts, theatre, opera and other specials · untick to leave them out'],
+        tick: { state: events ? 'all' : 'none', toggle: () => toggle(without, ['events']) },
+      },
     ];
   };
   const intro = h('div', { class: 'intro' },

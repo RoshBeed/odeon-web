@@ -104,7 +104,7 @@ export interface Scope {
   now: string;
   /** Today's date in London. */
   today: string;
-  /** Leave out what ODEON tags Event Cinema: concerts, theatre, opera and the like. */
+  /** Leave out films ODEON shows as Event Cinema: concerts, theatre, opera and the like. */
   noEvents?: boolean;
 }
 
@@ -166,7 +166,8 @@ function upcoming(l: Listings, scope: Scope, scoped = true): Show[] {
     if (l.shows[middle].startsAt > scope.now) high = middle;
     else low = middle + 1;
   }
-  const rest = scope.noEvents ? l.shows.slice(low).filter((show) => !isEvent(show)) : l.shows.slice(low);
+  // A film with any Event Cinema showing is an event, whatever its other showings say.
+  const rest = scope.noEvents ? l.shows.slice(low).filter((show) => !l.events.has(show.filmId)) : l.shows.slice(low);
   if (!scoped || (!scope.cinemas.length && !scope.hidden.length)) return rest;
   const ticked = new Set(scope.cinemas);
   const hidden = new Set(scope.hidden);

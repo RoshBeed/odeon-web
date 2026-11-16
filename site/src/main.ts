@@ -686,10 +686,18 @@ function noteNow() {
   if (hash !== (location.hash || '#/')) history.replaceState(null, '', location.pathname + location.search + hash);
 }
 
+/** Go to an address here and draw it at once, so that the next key press acts
+ *  on the new page; the browser only reports the change a moment later. */
+let drawn = '';
+function jump(hash: string) {
+  location.hash = hash;
+  if (location.hash !== drawn) render();
+}
+
 function go(target: string) {
   noteNow(); // so that going back finds this page as it was left
   // The welcome page stands alone; every other page opens alongside in the columns view.
-  location.hash = columns() && current.route ? writePage(target, PLAIN, here()) : '#/' + target;
+  jump(columns() && current.route ? writePage(target, PLAIN, here()) : '#/' + target);
 }
 /** A link to another page here; in the columns view it opens alongside. */
 function inner(label: string, target: string): HTMLElement {
@@ -699,7 +707,7 @@ function inner(label: string, target: string): HTMLElement {
 }
 function back() {
   if (columns()) {
-    if (current.route) location.hash = '#/' + current.trail.join('|'); // from the first column, the welcome page
+    if (current.route) jump('#/' + current.trail.join('|')); // from the first column, the welcome page
     return;
   }
   if (!route()) return;
@@ -752,7 +760,7 @@ function passed(segment: string, index: number, trail: string[]): HTMLElement {
   const view = viewFor(place);
   const table = view.table(ui);
   const list = cardList(table, ui.selected, (row) => {
-    location.hash = writePage(place, { ...ui, selected: row }, trail.slice(0, index));
+    jump(writePage(place, { ...ui, selected: row }, trail.slice(0, index)));
   });
   return h('div', { class: 'column' }, bar(view.title, ...tally(table)), ...(table.columns.length ? [list] : []), ...(view.intro ? [view.intro] : []));
 }
@@ -775,7 +783,7 @@ function preview() {
     bar(view.title, ...tally(table)),
     ...(table.columns.length ? [cardList(shown, -1, (index) => {
       noteNow();
-      location.hash = writePage(target, { ...PLAIN, selected: index }, here());
+      jump(writePage(target, { ...PLAIN, selected: index }, here()));
     })] : []),
     ...(table.total > shown.rows.length ? [h('p', { class: 'dim' }, `and ${count(table.total - shown.rows.length, 'more row')}`)] : []),
     ...(view.intro ? [view.intro] : []),
@@ -935,7 +943,7 @@ function showFinder(query: string): (event: KeyboardEvent) => void {
   /** Open a page from here, leaving the finder as it stands to come back to. */
   function leave(target: string) {
     clearTimeout(noting);
-    location.hash = `${write()}|${target}`;
+    jump(`${write()}|${target}`);
   }
 
   draw();
@@ -957,10 +965,10 @@ function showFinder(query: string): (event: KeyboardEvent) => void {
       else if (shown?.open) leave(shown.open);
     } else if (event.key === 'ArrowLeft' || event.key === 'Backspace') {
       if (focus) { focus -= 1; mark(); }
-      else { clearTimeout(noting); write(); location.hash = '#/browse'; }
+      else { clearTimeout(noting); write(); jump('#/browse'); }
     } else if (event.key === 'Escape') {
       if (focus < results && pick[FINDER[focus].facet]) choose(FINDER[focus].facet, undefined);
-      else { clearTimeout(noting); write(); location.hash = '#/browse'; }
+      else { clearTimeout(noting); write(); jump('#/browse'); }
     } else if (event.key === 'b' && shown?.book) {
       window.open(shown.book, '_blank', 'noopener');
     } else if (event.key === 'c' && shown?.calendar) {
@@ -976,6 +984,7 @@ function showFinder(query: string): (event: KeyboardEvent) => void {
  *  never replaces it; paint() then redraws only what a keystroke changes. */
 function render() {
   address(); // going back can land on an address from before a choice changed
+  drawn = location.hash;
   finder = null;
   const { trail: led, route: key, ui } = readPage(location.hash);
   const side = columns() && key !== '';
@@ -1207,7 +1216,7 @@ document.addEventListener('keydown', (event) => {
   event.preventDefault();
   action();
 });
-window.addEventListener('hashchange', render);
+window.addEventListener('hashchange', () => { if (location.hash !== drawn) render(); });
 narrow.addEventListener('change', () => { if (current) render(); });
 
 function load(all: boolean): Promise<void> {

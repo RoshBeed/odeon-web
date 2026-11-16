@@ -7,9 +7,11 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "test": "vitest run",
+    "e2e": "playwright test",
     "listings": "node scripts/export.ts ../data/odeon.sqlite public/data"
   },
   "devDependencies": {
+    "@playwright/test": "1.65.1",
     "@types/node": "26.6.6",
     "typescript": "7.0.2",
     "vite": "8.3.8",

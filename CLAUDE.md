@@ -29,4 +29,7 @@
   stored in the browser.
 - This repository is public. Never commit credentials; the tailnet identity and the OMDb key are
   GitHub Actions secrets.
+- `site/e2e/` holds Playwright tests that drive the built site by keys, clicks and scrolling
+  against a small set of listings (`npm run e2e`; `PW_CHANNEL=chrome` uses an installed Chrome).
+  Add one for any change to how the site is navigated.
 - Ship through a pull request and CI. The Deploy workflow publishes `main` to GitHub Pages.

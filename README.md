@@ -9,7 +9,7 @@ be added to your calendar.
 
 There is no server. Once a week a GitHub Actions workflow fetches the listings
 from ODEON into one SQLite file. The site is plain files on GitHub Pages; the
-browser downloads that file (about 2 MB) and runs every query itself. Cinemas
+browser downloads the listings once (under 1 MB) and keeps them in memory. Cinemas
 you tick and films you hide are remembered in your browser. It works on a phone
 by tapping, and on a computer by keyboard or mouse.
 
@@ -36,7 +36,7 @@ sorting is a menu above the list.
 | Part | Where | What it does |
 | --- | --- | --- |
 | Ingest | `ingest/` (Python) | Fetches the week's listings and ratings and writes the SQLite file |
-| Site | `site/` (TypeScript, Vite) | The interface; queries the file with SQLite compiled to WebAssembly |
+| Site | `site/` (TypeScript, Vite) | The interface; its build turns the file into JSON, which the page downloads once and holds in memory |
 | Listings | the `data` release of this repository | The published `odeon.sqlite.gz`; also the ingest's only memory between runs |
 | Workflows | `.github/workflows/` | `Ingest` (weekly), `Deploy` (GitHub Pages), `CI` |
 
@@ -76,14 +76,14 @@ The site needs the listings file to show anything:
 scripts/listings.sh download
 ```
 
-```bash
-mkdir -p site/public/data && gzip --stdout data/odeon.sqlite > site/public/data/odeon.sqlite.gz
-```
-
 Then, in `site/` (Node 26):
 
 ```bash
 npm install
+```
+
+```bash
+npm run listings
 ```
 
 ```bash

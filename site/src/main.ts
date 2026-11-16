@@ -13,7 +13,7 @@ interface Column {
   right?: boolean;
   /** Hidden on narrow screens. */
   wide?: boolean;
-  /** For tables sorted by the database: the name of its sort order. */
+  /** For the showtimes tables: the name of its sort order. */
   order?: string;
   wrap?: boolean;
 }
@@ -43,7 +43,7 @@ interface View {
   intro?: Node;
   /** Rows for the current sort, search and page. */
   table(ui: Ui): Table;
-  /** True when the database sorts, searches and pages (the showtimes tables). */
+  /** True when showings() sorts, searches and pages (the showtimes tables). */
   paged?: boolean;
   /** Keys that act on the page itself, not on a row. */
   keys?: Record<string, () => void>;
@@ -56,7 +56,7 @@ interface Ui {
   selected: number;
 }
 
-let db: q.Db;
+let db: q.Listings;
 const app = document.getElementById('app')!;
 const uis = new Map<string, Ui>();
 const narrow = matchMedia('(max-width: 640px)');
@@ -88,9 +88,8 @@ function toggle(set: Set<string>, key: string, ids: string[], on?: boolean) {
 
 /** Counts that scan every showing are kept until a choice or the hour changes. */
 const remembered = new Map<string, unknown>();
-const rememberKey = (name: string) => `${version}/${new Date().toISOString().slice(0, 13)}/${name}`;
 function remember<T>(name: string, make: () => T): T {
-  const key = rememberKey(name);
+  const key = `${version}/${new Date().toISOString().slice(0, 13)}/${name}`;
   if (!remembered.has(key)) {
     if (remembered.size > 40) remembered.clear();
     remembered.set(key, make());
@@ -152,7 +151,7 @@ function addToCalendar(cinema: string, id: string) {
   if (show) download(`${show.title.replace(/[^\w]+/g, '-')}.ics`, ics(show), 'text/calendar');
 }
 
-/** Sort, search and page a short list here; the database does it for showtimes. */
+/** Sort, search and page a short list here; showings() does it for showtimes. */
 function local(columns: Column[], rows: Row[], ui: Ui): Table {
   const value = (row: Row, index: number) => (row.values ? row.values[index] : row.cells[index]);
   const needle = ui.text.toLowerCase();
@@ -187,38 +186,11 @@ const FACET_MENUS = [
   ['Distributors', 'distributor', 'distributor'],
 ] as const;
 
-// Counts that read every showing: too slow to hold up the first page.
-const SLOW = {
-  tags: () => q.tags(db, scope(), 'experiences'),
-  seats: () => q.tags(db, scope(), 'seating'),
-  screens: () => q.screens(db, scope()),
-  certificate: () => q.facet(db, scope(), 'certificate'),
-  person: () => q.facet(db, scope(), 'person'),
-  genre: () => q.facet(db, scope(), 'genre'),
-  distributor: () => q.facet(db, scope(), 'distributor'),
-};
-type Slow = typeof SLOW;
-const counted = <K extends keyof Slow>(name: K) => remember<unknown>(name, SLOW[name]) as ReturnType<Slow[K]>;
-const counting = new Set<string>();
-/** A slow count if it is already known; otherwise it is worked out once the
- *  page is on screen, and the start page is drawn again with it. */
-function later<K extends keyof Slow>(name: K): ReturnType<Slow[K]> | undefined {
-  const key = rememberKey(name);
-  if (remembered.has(key)) return remembered.get(key) as ReturnType<Slow[K]>;
-  if (!counting.has(key)) {
-    counting.add(key);
-    setTimeout(() => {
-      counting.delete(key);
-      counted(name);
-      if (!route()) paint();
-    });
-  }
-  return undefined;
-}
-const experienceTags = () => counted('tags');
-const seatTypes = () => counted('seats');
-const allScreens = () => counted('screens');
-const facetRows = (kind: 'certificate' | 'person' | 'genre' | 'distributor') => counted(kind);
+const experienceTags = () => remember('tags', () => q.tags(db, scope(), 'experiences'));
+const seatTypes = () => remember('seats', () => q.tags(db, scope(), 'seating'));
+const allScreens = () => remember('screens', () => q.screens(db, scope()));
+const facetRows = (kind: 'certificate' | 'person' | 'genre' | 'distributor') =>
+  remember(kind, () => q.facet(db, scope(), kind));
 const allCinemas = () => remember('cinemas', () => q.cinemas(db, scope()));
 const some = (names: string[]) => names.slice(0, 3).join(', ') + (names.length > 3 ? ', …' : '');
 
@@ -227,7 +199,7 @@ function homeView(): View {
   const [first, last] = q.weekend(scope().today);
   const places = new Set(allCinemas().map(place));
   const rows = (): Row[] => {
-    const [screens, tags, seats] = [later('screens'), later('tags'), later('seats')];
+    const [screens, tags, seats] = [allScreens(), experienceTags(), seatTypes()];
     return [
       { cells: ['Films', count(home.films, 'film'), count(home.showings, 'showing')], open: 'films' },
       { cells: ['Cinemas', count(home.allCinemas, 'cinema'), ticks.size ? `${count(ticks.size, 'cinema')} ticked` : 'all'], open: 'cinemas' },
@@ -236,15 +208,14 @@ function homeView(): View {
       { cells: ['This weekend', count(home.weekendShows, 'screening'), `${count(home.weekendFilms, 'film')} · ${day(first)} – ${day(last)}`], open: 'weekend' },
       { cells: ['Opening soon', count(home.soon, 'film'), home.next ? `next: ${home.next.title} (${fullDate(home.next.release)})` : ''], open: 'soon' },
       { cells: ['Dates', count(home.days, 'day'), home.from ? `${day(home.from)} – ${fullDate(home.to)}` : ''], open: 'dates' },
-      { cells: ['Screens', screens ? count(screens.length, 'screen') : '…', 'by size, with formats'], open: 'screens' },
+      { cells: ['Screens', count(screens.length, 'screen'), 'by size, with formats'], open: 'screens' },
       ...TAG_MENUS.map(([name, kind, noun]): Row => {
-        const found = tags?.filter((row) => tagKind(row.tag) === kind);
-        return { cells: [name, found ? count(found.length, noun) : '…', found ? some(found.map((row) => tagLabel(row.tag))) : ''], open: path('tags', kind) };
+        const found = tags.filter((row) => tagKind(row.tag) === kind);
+        return { cells: [name, count(found.length, noun), some(found.map((row) => tagLabel(row.tag)))], open: path('tags', kind) };
       }),
-      { cells: ['Seating', seats ? count(seats.length, 'seat type') : '…', seats ? some(seats.map((row) => row.tag)) : ''], open: 'seats' },
+      { cells: ['Seating', count(seats.length, 'seat type'), some(seats.map((row) => row.tag))], open: 'seats' },
       ...FACET_MENUS.map(([name, kind, noun]): Row => {
-        const found = later(kind);
-        if (!found) return { cells: [name, '…', ''], open: path('by', kind) };
+        const found = facetRows(kind);
         const busiest = [...found].sort((a, b) => b.showings - a.showings).map((row) => row.name);
         return { cells: [name, count(found.length, noun), some(busiest)], open: path('by', kind) };
       }),
@@ -583,12 +554,9 @@ function back() {
   else go('');
 }
 
-let searching = 0;
-
 /** Build the page for a route. The search box lives here so that typing in it
  *  never replaces it; paint() then redraws only what a keystroke changes. */
 function render() {
-  clearTimeout(searching);
   const key = route();
   if (!uis.has(key)) uis.set(key, { order: null, descending: false, text: '', page: 0, selected: 0 });
   const ui = uis.get(key)!;
@@ -596,15 +564,8 @@ function render() {
   document.title = key ? `${view.title} · ODEON` : 'ODEON';
   const search = h('input', { type: 'search', placeholder: 'Search this table', 'aria-label': 'Search this table' }) as HTMLInputElement;
   search.value = ui.text;
-  search.oninput = () => {
-    ui.text = search.value; ui.page = 0; ui.selected = 0;
-    clearTimeout(searching);
-    // Short lists are searched here at once. Showtimes are searched by the
-    // database, which waits for a pause so that it never holds up typing.
-    if (view.paged) searching = window.setTimeout(paint, 120);
-    else paint();
-  };
-  const stamp = q.ingested(db);
+  search.oninput = () => { ui.text = search.value; ui.page = 0; ui.selected = 0; paint(); };
+  const stamp = db.ingested;
   const hints = ['↑↓ move', 'Enter open', 'Esc back', '/ search', 's sort', 'n p pages', 'Space tick', 'h hide film', 'b book', 'c calendar'];
   app.replaceChildren(
     h('header', {},
@@ -783,7 +744,7 @@ document.addEventListener('keydown', (event) => {
 window.addEventListener('hashchange', render);
 narrow.addEventListener('change', () => { if (current) paint(); });
 
-openListings('./data/odeon.sqlite.gz').then(
+openListings('./data/listings.json.gz').then(
   (listings) => { db = listings; render(); },
   (error) => { app.replaceChildren(h('p', { class: 'error' }, String(error.message ?? error))); },
 );

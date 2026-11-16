@@ -20,6 +20,7 @@ a { color: inherit; }
 header { display: flex; gap: 12px; align-items: baseline; padding: 14px 0 10px; border-bottom: 1px solid var(--line); }
 header h1 { font-size: 1rem; margin: 0; font-weight: 600; }
 header h1 span { color: var(--dim); font-weight: 400; }
+header h1 a { color: inherit; }
 header a, header button { color: var(--accent); text-decoration: none; background: none; border: 0; font: inherit; padding: 0; cursor: pointer; }
 
 .intro { padding: 14px 0 4px; max-width: 80ch; }
@@ -54,6 +55,8 @@ tbody tr.selected { background: var(--select); color: #fff; }
 tbody tr.selected .dim { color: #cfe2f7; }
 .tick { width: 1%; color: var(--accent); cursor: pointer; }
 .sold { text-decoration: line-through; }
+.pinned td:first-child, .pinned strong { color: var(--accent); }
+.selected.pinned td:first-child, .selected.pinned strong { color: inherit; }
 .empty { padding: 24px 6px; color: var(--dim); }
 
 footer { position: fixed; left: 0; right: 0; bottom: 0; background: var(--panel); border-top: 1px solid var(--line); padding: 6px 16px; color: var(--dim); display: flex; gap: 16px; flex-wrap: wrap; justify-content: space-between; }

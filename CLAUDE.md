@@ -17,9 +17,11 @@
   per-screening live data. Tests use a fake ODEON.
 - There is no server and no secret in the site. Visitor choices (ticked cinemas, hidden films)
   live in the page's address (`?cinemas=…&hidden=…`), and so does each page's sort, search,
-  page and highlighted row (`#/films?sort=3&page=2`). `?view=columns` is an opt-in layout
-  that shows the pages side by side, as Finder's column view does; the pages that led here are
-  then listed in the address, separated by `|`. A bookmark keeps all of it; nothing is
+  page and highlighted row (`#/films?sort=3&page=2`). On a wide screen the pages
+  show side by side, as Finder's column view does, and the pages that led here are listed in
+  the address, separated by `|`; `?view=pages` shows one page at a time, as phones always do.
+- `#/` is the welcome page, `#/browse` the menu (always the first column). Each thing has one
+  place: cinemas and locations in the menu, the other choices in Settings. A bookmark keeps all of it; nothing is
   stored in the browser.
 - This repository is public. Never commit credentials; the tailnet identity and the OMDb key are
   GitHub Actions secrets.

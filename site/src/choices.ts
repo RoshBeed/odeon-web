@@ -21,7 +21,7 @@ export function needsEveryCinema(route: string, ticks: Set<string>): boolean {
   const [name, a, b] = route.split('/').map(decodeURIComponent);
   if (['cinemas', 'locations', 'location'].includes(name)) return true; // where any cinema can be ticked
   if (['cinema', 'screen', 'show'].includes(name)) return !LONDON.has(a);
-  return name === 'film' && b !== undefined && !LONDON.has(b);
+  return name === 'film' && b !== undefined && b !== 'all' && !LONDON.has(b);
 }
 
 /** How one page is being looked at. */

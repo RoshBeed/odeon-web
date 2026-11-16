@@ -1,0 +1,91 @@
+name: Ingest
+# The weekly listings. ODEON publishes on Tuesdays, so the check runs hourly on
+# Tuesdays and Wednesdays; once the week is stored a check contacts nobody.
+# The listings are one SQLite file, kept as an asset of the `data` release and
+# built into the site by the Deploy workflow.
+on:
+  schedule:
+    - cron: "17 * * * 2,3"
+  workflow_dispatch:
+    inputs:
+      command:
+        description: "check: ingest only if this week is not stored. run: ingest now."
+        type: choice
+        options: [check, run]
+        default: check
+concurrency:
+  group: ingest
+  cancel-in-progress: false
+permissions:
+  contents: write
+  actions: write
+jobs:
+  ingest:
+    # ODEON_INGEST=false pauses the schedule; it can still be started by hand.
+    if: github.ref == 'refs/heads/main' && (vars.ODEON_INGEST != 'false' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-latest
+    outputs:
+      changed: ${{ steps.publish.outputs.changed }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+      ODEON_DATABASE: ${{ github.workspace }}/data/odeon.sqlite
+      ODEON_CINEMAS: ${{ vars.ODEON_CINEMAS }}
+      COMMAND: ${{ inputs.command || 'check' }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10
+      - run: uv sync --locked --no-dev
+        working-directory: ingest
+      - name: Fetch the stored listings
+        # Starting from last week's file keeps the screen sizes already
+        # fetched, and records which release week is stored.
+        run: |
+          bash scripts/listings.sh download
+          sha256sum data/odeon.sqlite > "$RUNNER_TEMP/before" || true
+      - name: Would this contact ODEON?
+        id: due
+        working-directory: ingest
+        run: |
+          if [ "$COMMAND" = run ] || uv run odeon-ingest due; then echo "due=true" >> "$GITHUB_OUTPUT"; fi
+      - name: Install the browser that captures ODEON's token
+        if: steps.due.outputs.due == 'true'
+        working-directory: ingest
+        run: uv run playwright install --with-deps webkit
+      - name: Ingest the listings
+        # One attempt: a failure is recorded in the file and the next hourly
+        # check tries again, up to three times a week.
+        if: steps.due.outputs.due == 'true'
+        working-directory: ingest
+        run: ../scripts/via-tailnet.sh uv run odeon-ingest "$COMMAND"
+        env:
+          TAILSCALE_EXIT_NODE: ${{ vars.TAILSCALE_EXIT_NODE }}
+          TAILSCALE_STATE: ${{ secrets.TAILSCALE_STATE }}
+      - name: Ingest the ratings
+        working-directory: ingest
+        run: uv run odeon-ingest ratings
+        env:
+          OMDB_API_KEY: ${{ secrets.OMDB_API_KEY }}
+      - name: Publish the listings
+        id: publish
+        # Also after a failure, so that the failed run is on record next time.
+        if: always()
+        run: |
+          if [ ! -f data/odeon.sqlite ] || sha256sum --check --status "$RUNNER_TEMP/before"; then
+            echo "Nothing new to publish."
+            exit 0
+          fi
+          bash scripts/listings.sh upload
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+      - name: Keep the schedule alive
+        # GitHub switches off schedules in a repository with no commits for 60
+        # days; enabling the workflow again restarts that clock.
+        if: always()
+        run: gh workflow enable ingest.yml
+  deploy:
+    needs: ingest
+    if: needs.ingest.outputs.changed == 'true'
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    uses: ./.github/workflows/deploy.yml

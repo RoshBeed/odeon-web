@@ -1,12 +1,11 @@
 // The interface: a stack of tables over the listings, driven by keys, clicks or taps.
 import { ics } from './calendar';
-import { needsEveryCinema, PLAIN, readChoice, readPage, writeChoices, writePage, type Ui } from './choices';
+import { needsEveryCinema, PAGE, PLAIN, readChoice, readPage, writeChoices, writePage, type Ui } from './choices';
 import { openListings } from './db';
 import * as q from './queries';
 import { certificateAge, formats, place, shortCinema, tagKind, tagLabel, type TagKind } from './tags';
 
 const BOOKING = 'https://www.odeon.co.uk/ticketing/seat-picker/?showtimeId=';
-const PAGE = 100;
 
 type Cell = string | number | null;
 interface Column {
@@ -44,9 +43,9 @@ interface Table {
 interface View {
   title: string;
   intro?: Node;
-  /** Rows for the current sort, search and page. */
+  /** Rows for the current sort and search: the first `(ui.page + 1) * PAGE` of them. */
   table(ui: Ui): Table;
-  /** True when showings() sorts, searches and pages (the showtimes tables). */
+  /** True when showings() sorts and searches (the showtimes tables). */
   paged?: boolean;
   /** Keys that act on the page itself, not on a row. */
   keys?: Record<string, () => void>;
@@ -148,7 +147,7 @@ function addToCalendar(cinema: string, id: string) {
   if (show) download(`${show.title.replace(/[^\w]+/g, '-')}.ics`, ics(show), 'text/calendar');
 }
 
-/** Sort, search and page a short list here; showings() does it for showtimes. */
+/** Sort and search a short list here; showings() does it for showtimes. */
 function local(columns: Column[], rows: Row[], ui: Ui, all?: Row): Table {
   const value = (row: Row, index: number) => (row.values ? row.values[index] : row.cells[index]);
   const needle = ui.text.toLowerCase();
@@ -165,7 +164,7 @@ function local(columns: Column[], rows: Row[], ui: Ui, all?: Row): Table {
       return sign * (typeof x === 'number' && typeof y === 'number' ? x - y : String(x).localeCompare(String(y)));
     });
   }
-  const page = found.slice(ui.page * PAGE, (ui.page + 1) * PAGE);
+  const page = found.slice(0, (ui.page + 1) * PAGE);
   return { columns, rows: all ? [{ ...all, cells: columns.map((_, index) => (index ? '' : 'All')) }, ...page] : page, total: found.length };
 }
 
@@ -282,6 +281,25 @@ function hideButton(id: string): HTMLElement {
   });
 }
 
+/** The trailer, in place: a still that becomes the player when pressed, so
+ *  that moving past a film loads one picture and no player. */
+function trailer(address: string): Node {
+  const id = /[?&]v=([\w-]{11})/.exec(address)?.[1];
+  if (!id) return h('p', { class: 'actions' }, link('Watch the trailer', address, true));
+  const frame = h('div', { class: 'trailer' });
+  const still = h('button', { type: 'button', 'aria-label': 'Play the trailer' },
+    h('img', { src: `https://i.ytimg.com/vi/${id}/hqdefault.jpg`, alt: '', loading: 'lazy' }),
+    h('span', {}, '▶ Trailer'));
+  still.onclick = () => frame.replaceChildren(h('iframe', {
+    src: `https://www.youtube-nocookie.com/embed/${id}?autoplay=1`,
+    title: 'Trailer',
+    allow: 'autoplay; encrypted-media; picture-in-picture; fullscreen',
+    allowfullscreen: '',
+  }));
+  frame.append(still);
+  return frame;
+}
+
 function filmIntro(film: q.Film): Node {
   const named = (role: string) => film.people.filter((p) => p.roles.includes(role)).map((p) => p.name).join(', ');
   const pairs: [string, Node | string][] = [
@@ -301,7 +319,8 @@ function filmIntro(film: q.Film): Node {
   return h('div', { class: 'intro' },
     facts(pairs),
     h('p', { class: 'dim' }, film.synopsis),
-    h('p', { class: 'actions' }, ...(film.trailer ? [link('Watch the trailer', film.trailer, true)] : []), hideButton(film.id)),
+    ...(film.trailer ? [trailer(film.trailer)] : []),
+    h('p', { class: 'actions' }, hideButton(film.id)),
   );
 }
 
@@ -484,7 +503,7 @@ function showingsView(title: string, filter: q.ShowingFilter, within: q.Scope = 
     paged: true,
     table(ui) {
       const order = ui.order === null ? 'date' : (columns[ui.order].order ?? 'date');
-      const found = q.showings(db, within, { ...filter, text: ui.text }, order, ui.descending, PAGE, ui.page * PAGE);
+      const found = q.showings(db, within, { ...filter, text: ui.text }, order, ui.descending, (ui.page + 1) * PAGE);
       return {
         columns,
         total: found.total,
@@ -600,7 +619,11 @@ function viewFor(route: string): View {
 // ---- Rendering and keys -------------------------------------------------
 
 const route = () => readPage(location.hash).route;
-let current: { trail: string[]; route: string; view: View; ui: Ui; table: Table };
+let current: {
+  trail: string[]; route: string; view: View; ui: Ui; table: Table;
+  /** Where the rows are drawn, and how one is made, so that more can be added. */
+  body?: HTMLElement; make?: (row: Row, index: number) => HTMLElement;
+};
 
 /** The sort, search, page and highlighted row go in the address too, so that a
  *  bookmark, a link or going back returns to exactly this. They are written
@@ -647,26 +670,30 @@ const columns = () => !layout.has('pages') && !narrow.matches;
 /** The trail a deeper page would have: this page's, and this page as it stands. */
 const here = () => [...current.trail, writePage(current.route, current.ui).slice(2)];
 
-/** A table as a list of cards: how a phone, and each column, shows it. */
-function cardList(table: Table, selected: number, pick: (index: number) => void, box?: (row: Row, index: number) => Node): HTMLElement {
-  return h('ul', { class: 'cards' }, ...table.rows.map((row, index) => {
-    const shown = row.card ?? {
-      title: String(row.cells[0] ?? '–'),
-      meta: row.cells.slice(1).map((cell, offset) => {
-        const column = table.columns[offset + 1];
-        if (cell === null || cell === '') return '';
-        const noun = column.label.toLowerCase();
-        return column.right ? `${cell} ${cell === 1 ? noun.replace(/s$/, '') : noun}` : String(cell);
-      }).filter(Boolean).join(' · '),
-    };
-    const card = h('li', { class: [index === selected ? 'selected' : '', row.sold ? 'sold' : '', row.pinned ? 'pinned' : ''].join(' ') },
-      ...(row.tick ? [box ? box(row, index) : h('span', { class: 'tick' }, BOXES[row.tick.state])] : []),
-      h('span', { class: 'text' }, h('strong', {}, shown.title), ...(shown.meta ? [h('span', { class: 'dim' }, shown.meta)] : [])),
-      ...(row.open ? [h('span', { class: 'go dim' }, '›')] : []));
-    card.onclick = () => pick(index);
-    return card;
-  }));
+/** One row as a card: how a phone, and each column, shows it. */
+function cardItem(columns: Column[], row: Row, index: number, selected: number, pick: (index: number) => void, box?: (row: Row, index: number) => Node): HTMLElement {
+  const shown = row.card ?? {
+    title: String(row.cells[0] ?? '–'),
+    meta: row.cells.slice(1).map((cell, offset) => {
+      const column = columns[offset + 1];
+      if (cell === null || cell === '') return '';
+      const noun = column.label.toLowerCase();
+      return column.right ? `${cell} ${cell === 1 ? noun.replace(/s$/, '') : noun}` : String(cell);
+    }).filter(Boolean).join(' · '),
+  };
+  const card = h('li', { class: [index === selected ? 'selected' : '', row.sold ? 'sold' : '', row.pinned ? 'pinned' : ''].join(' ') },
+    ...(row.tick ? [box ? box(row, index) : h('span', { class: 'tick' }, BOXES[row.tick.state])] : []),
+    h('span', { class: 'text' }, h('strong', {}, shown.title), ...(shown.meta ? [h('span', { class: 'dim' }, shown.meta)] : [])),
+    ...(row.open ? [h('span', { class: 'go dim' }, '›')] : []));
+  card.onclick = () => pick(index);
+  return card;
 }
+function cardList(table: Table, selected: number, pick: (index: number) => void): HTMLElement {
+  return h('ul', { class: 'cards' }, ...table.rows.map((row, index) => cardItem(table.columns, row, index, selected, pick)));
+}
+/** A column's heading line: its title, then whatever goes beside it. */
+const bar = (title: string, ...beside: Node[]) => h('div', { class: 'bar' }, h('h2', { title }, title), ...beside);
+const tally = (table: Table) => (table.columns.length ? [h('span', { class: 'dim' }, table.total.toLocaleString('en-GB'))] : []);
 
 /** A page that led here: its list, with the row that was followed highlighted. */
 function passed(segment: string, index: number, trail: string[]): HTMLElement {
@@ -676,7 +703,7 @@ function passed(segment: string, index: number, trail: string[]): HTMLElement {
   const list = cardList(table, ui.selected, (row) => {
     location.hash = writePage(place, { ...ui, selected: row }, trail.slice(0, index));
   });
-  return h('div', { class: 'column' }, h('h2', {}, view.title), ...(table.columns.length ? [list] : []), ...(view.intro ? [view.intro] : []));
+  return h('div', { class: 'column' }, bar(view.title, ...tally(table)), ...(table.columns.length ? [list] : []), ...(view.intro ? [view.intro] : []));
 }
 
 /** Show the highlighted row's page in the last column, before it is opened. */
@@ -688,13 +715,13 @@ function preview() {
   const target = row.open;
   if (!whole && needsEveryCinema(target, ticks)) {
     // Its listings are not downloaded yet; opening it fetches them.
-    return box.replaceChildren(h('h2', {}, String(row.cells[0] ?? '')), h('p', { class: 'dim' }, 'Press → to open.'));
+    return box.replaceChildren(bar(String(row.cells[0] ?? '')), h('p', { class: 'dim' }, 'Press → to open.'));
   }
   const view = viewFor(target);
   const table = view.table({ ...PLAIN });
   const shown = { ...table, rows: table.rows.slice(0, 50) };
   box.replaceChildren(
-    h('h2', {}, view.title),
+    bar(view.title, ...tally(table)),
     ...(table.columns.length ? [cardList(shown, -1, (index) => {
       noteNow();
       location.hash = writePage(target, { ...PLAIN, selected: index }, here());
@@ -726,16 +753,16 @@ function render() {
   if (!db) return; // still downloading; load() draws the page when it arrives
   const view = viewFor(key);
   document.title = key ? `${view.title} · ODEON` : 'ODEON';
-  const search = h('input', { type: 'search', placeholder: 'Search this table', 'aria-label': 'Search this table' }) as HTMLInputElement;
+  const search = h('input', { type: 'search', placeholder: side ? 'Search' : 'Search this table', 'aria-label': 'Search this table' }) as HTMLInputElement;
   search.value = ui.text;
   search.oninput = () => { ui.text = search.value; ui.page = 0; ui.selected = 0; paint(); };
   const stamp = db.ingested;
-  const hints = ['↑↓ move', 'Enter open', 'Esc back', '/ search', 's sort', 'n p pages', 'Space tick', 'h hide film', 'b book', 'c calendar', 'v columns'];
+  const hints = ['↑↓ move', 'Enter open', 'Esc back', '/ search', 's sort', 'Space tick', 'h hide film', 'b book', 'c calendar', 'v columns'];
   const tools = h('div', { class: 'tools' }, search, h('span', { class: 'sorter' }), h('span', { class: 'pager' }));
   const list = h('div', { class: 'scroll' });
-  // Every column starts with its list; a page's details and its search follow.
+  // A column is its heading line, with the search and sort in it, then its list, then any details.
   const parts = side
-    ? [list, ...(view.intro ? [view.intro] : []), tools]
+    ? [bar(view.title, tools), list, ...(view.intro ? [view.intro] : [])]
     : [...(view.intro ? [view.intro] : []), tools, list];
   app.classList.toggle('side', side);
   app.replaceChildren(
@@ -746,7 +773,7 @@ function render() {
     ...(side
       ? [h('div', { class: 'columns' },
           ...trail.map(passed),
-          h('div', { class: 'column focused' }, h('h2', {}, view.title), ...parts),
+          h('div', { class: 'column focused' }, ...parts),
           h('div', { class: 'column preview' }))]
       : parts),
     h('footer', {},
@@ -767,11 +794,33 @@ function render() {
 
 const BOXES = { all: '[x]', some: '[-]', none: '[ ]' };
 
+/** Draws more rows while the end of the list is in, or close to, view. */
+function fill() {
+  const near = () => {
+    const rest = app.querySelector('.rest');
+    return rest !== null && rest.getBoundingClientRect().top < innerHeight + 600;
+  };
+  while (current && near() && more());
+}
+// Scrolling does not bubble, so listen on the way down: the page or a column may be what scrolls.
+document.addEventListener('scroll', fill, { capture: true, passive: true });
+const complete = (table: Table) => table.rows.length - (table.rows[0]?.pinned ? 1 : 0) >= table.total;
+
+/** Add the next batch of rows to the list. False when there are no more. */
+function more(): boolean {
+  const { view, ui, table, body, make } = current;
+  if (!body || !make || complete(table)) return false;
+  ui.page += 1;
+  const next = view.table(ui);
+  body.append(...next.rows.slice(table.rows.length).map((row, offset) => make(row, table.rows.length + offset)));
+  current.table = next;
+  if (complete(next)) app.querySelector('.rest')?.remove();
+  return true;
+}
+
 function paint() {
   const { view, ui } = current;
-  let table = view.table(ui);
-  const pages = Math.max(1, Math.ceil(table.total / PAGE));
-  if (ui.page >= pages) { ui.page = pages - 1; table = view.table(ui); }
+  const table = view.table(ui);
   ui.selected = Math.min(ui.selected, Math.max(table.rows.length - 1, 0));
   current.table = table;
   const sortable = table.columns.map((column, index) => (!view.paged || column.order ? index : -1)).filter((index) => index >= 0);
@@ -783,12 +832,14 @@ function paint() {
   };
 
   let list: HTMLElement;
-  if (narrow.matches) {
-    // Phones: one card a row, the whole card a tap target.
-    list = cardList(table, ui.selected, (index) => { ui.selected = index; open(); }, (row, index) => tickBox(row, index, 'span'));
-  } else if (columns()) {
+  let body: HTMLElement;
+  let make: (row: Row, index: number) => HTMLElement;
+  if (narrow.matches || columns()) {
+    // Phones: one card a row, the whole card a tap target that opens it.
     // Columns: a click highlights, which shows the row's page alongside.
-    list = cardList(table, ui.selected, (index) => move(index - ui.selected), (row, index) => tickBox(row, index, 'span'));
+    const pick = narrow.matches ? (index: number) => { ui.selected = index; open(); } : (index: number) => move(index - ui.selected);
+    make = (row, index) => cardItem(table.columns, row, index, ui.selected, pick, (boxed, at) => tickBox(boxed, at, 'span'));
+    list = body = h('ul', { class: 'cards' });
   } else {
     const head = h('tr', {}, ...(ticking ? [h('th', {})] : []), ...table.columns.map((column, index) => {
       const sorted = ui.order === index;
@@ -797,7 +848,7 @@ function paint() {
       th.onclick = () => sortBy(index);
       return th;
     }));
-    const body = h('tbody', {}, ...table.rows.map((row, index) => {
+    make = (row, index) => {
       const tr = h('tr', { class: [index === ui.selected ? 'selected' : '', row.pinned ? 'pinned' : ''].join(' ') },
         ...(ticking ? [row.tick ? tickBox(row, index, 'td') : h('td', {})] : []),
         ...row.cells.map((cell, column) => {
@@ -807,9 +858,13 @@ function paint() {
         }));
       tr.onclick = () => { ui.selected = index; open(); };
       return tr;
-    }));
+    };
+    body = h('tbody', {});
     list = h('table', {}, h('thead', {}, head), body);
   }
+  body.append(...table.rows.map(make));
+  current.body = body;
+  current.make = make;
 
   // Sorting without a keyboard or headings: a menu of the sortable columns.
   const sorter = h('select', { 'aria-label': 'Sort by' }, h('option', { value: '' }, 'Sort…'),
@@ -820,44 +875,33 @@ function paint() {
   flip.setAttribute('aria-label', 'Reverse the order');
   app.querySelector('.sorter')!.replaceChildren(...(sortable.length ? [sorter, flip] : []));
 
-  const pager = (label: string, step: number, enabled: boolean) => {
-    const control = button(label, () => turn(step)) as HTMLButtonElement;
-    control.disabled = !enabled;
-    return control;
-  };
   app.querySelector<HTMLElement>('.tools')!.hidden = !table.columns.length;
   app.querySelector('.pager')!.replaceChildren(
-    ...(pages > 1 ? [pager('←', -1, ui.page > 0), h('span', { class: 'dim' }, `${ui.page + 1} / ${pages}`), pager('→', 1, ui.page < pages - 1)] : []),
-    h('span', { class: 'dim' }, count(table.total, 'row')));
+    h('span', { class: 'dim' }, columns() ? table.total.toLocaleString('en-GB') : count(table.total, 'row')));
+  const rest = complete(table) ? null : h('p', { class: 'rest dim' }, 'more…');
   app.querySelector('.scroll')!.replaceChildren(...(table.columns.length ? [
     list,
     ...(table.rows.length ? [] : [h('p', { class: 'empty' }, ticks.size ? 'Nothing here for your ticked cinemas.' : 'Nothing here.')]),
+    ...(rest ? [rest] : []),
   ] : []));
   if (!narrow.matches) list.querySelector('.selected')?.scrollIntoView({ block: 'nearest' });
   note();
   preview();
+  fill();
 }
 
 function move(step: number) {
   // Only the highlight moves: no query, and nothing is rebuilt.
-  const { ui, table } = current;
+  const { ui } = current;
+  // Moving past the last row drawn draws the next batch first.
+  while (Number.isFinite(step) && ui.selected + step > current.table.rows.length - 1 && more());
   const items = app.querySelectorAll('.scroll tbody tr, .scroll .cards li');
   items[ui.selected]?.classList.remove('selected');
-  ui.selected = Math.max(0, Math.min(table.rows.length - 1, ui.selected + step));
+  ui.selected = Math.max(0, Math.min(current.table.rows.length - 1, ui.selected + step));
   items[ui.selected]?.classList.add('selected');
   if (!narrow.matches) items[ui.selected]?.scrollIntoView({ block: 'nearest' });
   note();
   preview();
-}
-function turn(step: number) {
-  const { ui, table } = current;
-  const page = ui.page + step;
-  if (page < 0 || page >= Math.ceil(table.total / PAGE)) return;
-  ui.page = page;
-  ui.selected = 0;
-  paint();
-  window.scrollTo(0, 0);
-  app.querySelector('.focused')?.scrollTo(0, 0);
 }
 function sortBy(index: number, flipSame = true) {
   const { ui, view, table } = current;
@@ -901,7 +945,7 @@ document.addEventListener('keydown', (event) => {
     PageDown: () => move(20), PageUp: () => move(-20),
     Home: () => move(-Infinity), End: () => move(Infinity),
     Enter: open, ArrowRight: open, Escape: back, ArrowLeft: back, Backspace: back,
-    ' ': tick, s: nextSort, n: () => turn(1), p: () => turn(-1), v: switchLayout,
+    ' ': tick, s: nextSort, v: switchLayout,
     '/': () => app.querySelector<HTMLInputElement>('.tools input')?.focus(),
     b: () => { const row = selectedRow(); if (row?.book) window.open(row.book, '_blank', 'noopener'); },
     c: () => selectedRow()?.calendar?.(),

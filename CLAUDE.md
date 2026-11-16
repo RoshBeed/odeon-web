@@ -14,7 +14,8 @@
 - Keep ODEON traffic minimal: one ingest per release week, no retry loops, and never fetch
   per-screening live data. Tests use a fake ODEON.
 - There is no server and no secret in the site. Visitor choices (ticked cinemas, hidden films)
-  live in the page's address (`?cinemas=…&hidden=…`), so a bookmark keeps them; nothing is
+  live in the page's address (`?cinemas=…&hidden=…`), and so does each page's sort, search,
+  page and highlighted row (`#/films?sort=3&page=2`). A bookmark keeps all of it; nothing is
   stored in the browser.
 - This repository is public. Never commit credentials; the tailnet identity and the OMDb key are
   GitHub Actions secrets.

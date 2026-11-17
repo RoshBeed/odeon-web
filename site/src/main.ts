@@ -35,7 +35,7 @@ interface Row {
   /** Stays first on every page of its table, whatever the sort or search. */
   pinned?: boolean;
   /** How the row reads on a phone, when columns alone would not. */
-  card?: { title: string; meta: string };
+  card?: { title: string; meta: string; /** In a column, on one line. */ line?: boolean };
 }
 interface Table {
   columns: Column[];
@@ -275,7 +275,12 @@ function filmsView(title = 'Films', filter: q.FilmFilter = {}): View {
       film: film.id,
       card: {
         title: film.title,
-        meta: [film.certificate || 'TBC', film.runtime ? `${film.runtime} min` : '', film.imdb ? `IMDb ${film.imdb.toFixed(1)}` : '', count(film.cinemas, 'cinema'), count(film.showings, 'showing'), film.from > scope().today ? `from ${day(film.from)}` : ''].filter(Boolean).join(' · '),
+        // A column gives each film one line, so only what tells films apart; a phone has room for the counts.
+        meta: (side()
+          ? [[film.certificate || 'TBC', film.runtime ? `${film.runtime}m` : '', film.imdb ? `★${film.imdb.toFixed(1)}` : ''].filter(Boolean).join(' '), film.from > scope().today ? `from ${day(film.from).slice(4)}` : '']
+          : [film.certificate || 'TBC', film.runtime ? `${film.runtime} min` : '', film.imdb ? `IMDb ${film.imdb.toFixed(1)}` : '', count(film.cinemas, 'cinema'), count(film.showings, 'showing'), film.from > scope().today ? `from ${day(film.from)}` : '']
+        ).filter(Boolean).join(' · '),
+        line: side(),
       },
     })));
     return local(columns, rows, ui, Object.keys(filter).length ? undefined : allRow('all', 'every showtime, whatever the film'));
@@ -528,7 +533,8 @@ function showingsView(title: string, filter: q.ShowingFilter, within: q.Scope = 
         columns,
         total: found.total,
         rows: found.rows.map((row, index): Row => {
-          const span = ends(row) ? `${row.time}–${ends(row)}` : row.time;
+          // One line has room for the start alone; the showing's own page says when it ends.
+          const span = ends(row) && !side() ? `${row.time}–${ends(row)}` : row.time;
           return {
             cells: columns.map((column) => column.cell(row)),
             open: path('show', row.cinemaId, row.id),
@@ -539,15 +545,18 @@ function showingsView(title: string, filter: q.ShowingFilter, within: q.Scope = 
               ? day(row.date) + (db.fullUntil && row.date > db.fullUntil ? ' · advance bookings only so far' : '')
               : undefined,
             card: {
-              title: filter.film ? span + (dated ? `  ${day(row.startsAt)}` : '') : `${span}  ${row.title}`,
-              meta: [
-                !filter.film && dated ? day(row.startsAt) : '',
-                filter.cinema ? '' : shortCinema(row.cinema),
-                row.screen,
-                row.capacity ? `${row.capacity} seats` : '',
-                formats(row.experiences),
-                row.soldOut ? 'sold out' : '',
-              ].filter(Boolean).join(' · '),
+              title: filter.film ? (side() ? (ends(row) ? `${row.time}–${ends(row)}` : row.time) : span + (dated ? `  ${day(row.startsAt)}` : '')) : `${span}  ${row.title}`,
+              line: side(),
+              meta: (side() // one line: its format, where, and how many seats
+                ? [formats(row.experiences, ['Picture']), dated ? day(row.startsAt) : '', filter.cinema ? row.screen.replace(/^Screen /, '#') : shortCinema(row.cinema), row.capacity, row.soldOut ? 'sold out' : '']
+                : [
+                  !filter.film && dated ? day(row.startsAt) : '',
+                  filter.cinema ? '' : shortCinema(row.cinema),
+                  row.screen,
+                  row.capacity ? `${row.capacity} seats` : '',
+                  formats(row.experiences),
+                  row.soldOut ? 'sold out' : '',
+                ]).filter(Boolean).join(' · '),
             },
           };
         }),
@@ -727,6 +736,8 @@ function back() {
 
 /** Columns unless the visitor asked for pages, or the screen is a phone's. */
 const columns = () => !layout.has('pages') && !narrow.matches;
+/** The same, for where `columns` names a table's columns. */
+const side = columns;
 /** The trail a deeper page would have: this page's, and this page as it stands. */
 const here = () => [...current.trail, writePage(current.route, current.ui).slice(2)];
 
@@ -741,9 +752,9 @@ function cardItem(columns: Column[], row: Row, index: number, selected: number, 
       return column.right ? `${cell} ${cell === 1 ? noun.replace(/s$/, '') : noun}` : String(cell);
     }).filter(Boolean).join(' · '),
   };
-  const card = h('li', { class: [index === selected ? 'selected' : '', row.sold ? 'sold' : '', row.pinned ? 'pinned' : ''].join(' ') },
+  const card = h('li', { class: [index === selected ? 'selected' : '', row.sold ? 'sold' : '', row.pinned ? 'pinned' : '', shown.line ? 'line' : ''].join(' ') },
     ...(row.tick ? [box ? box(row, index) : h('span', { class: 'tick' }, BOXES[row.tick.state])] : []),
-    h('span', { class: 'text' }, h('strong', {}, shown.title), ...(shown.meta ? [h('span', { class: 'dim' }, shown.meta)] : [])),
+    h('span', { class: 'text', title: shown.meta ? `${shown.title} · ${shown.meta}` : shown.title }, h('strong', {}, shown.title), ...(shown.meta ? [h('span', { class: 'dim' }, shown.meta)] : [])),
     ...(row.open ? [h('span', { class: 'go dim' }, '›')] : []));
   card.onclick = () => pick(index);
   return card;

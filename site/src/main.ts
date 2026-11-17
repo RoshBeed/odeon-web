@@ -35,7 +35,7 @@ interface Row {
   /** Stays first on every page of its table, whatever the sort or search. */
   pinned?: boolean;
   /** How the row reads on a phone, when columns alone would not. */
-  card?: { title: string; meta: string; /** In a column, on one line. */ line?: boolean };
+  card?: { title: string; meta: string };
 }
 interface Table {
   columns: Column[];
@@ -280,7 +280,6 @@ function filmsView(title = 'Films', filter: q.FilmFilter = {}): View {
           ? [[film.certificate || 'TBC', film.runtime ? `${film.runtime}m` : '', film.imdb ? `★${film.imdb.toFixed(1)}` : ''].filter(Boolean).join(' '), film.from > scope().today ? `from ${day(film.from).slice(4)}` : '']
           : [film.certificate || 'TBC', film.runtime ? `${film.runtime} min` : '', film.imdb ? `IMDb ${film.imdb.toFixed(1)}` : '', count(film.cinemas, 'cinema'), count(film.showings, 'showing'), film.from > scope().today ? `from ${day(film.from)}` : '']
         ).filter(Boolean).join(' · '),
-        line: side(),
       },
     })));
     return local(columns, rows, ui, Object.keys(filter).length ? undefined : allRow('all', 'every showtime, whatever the film'));
@@ -546,7 +545,6 @@ function showingsView(title: string, filter: q.ShowingFilter, within: q.Scope = 
               : undefined,
             card: {
               title: filter.film ? (side() ? (ends(row) ? `${row.time}–${ends(row)}` : row.time) : span + (dated ? `  ${day(row.startsAt)}` : '')) : `${span}  ${row.title}`,
-              line: side(),
               meta: (side() // one line: its format, where, and how many seats
                 ? [formats(row.experiences, ['Picture']), dated ? day(row.startsAt) : '', filter.cinema ? row.screen.replace(/^Screen /, '#') : shortCinema(row.cinema), row.capacity, row.soldOut ? 'sold out' : '']
                 : [
@@ -752,7 +750,7 @@ function cardItem(columns: Column[], row: Row, index: number, selected: number, 
       return column.right ? `${cell} ${cell === 1 ? noun.replace(/s$/, '') : noun}` : String(cell);
     }).filter(Boolean).join(' · '),
   };
-  const card = h('li', { class: [index === selected ? 'selected' : '', row.sold ? 'sold' : '', row.pinned ? 'pinned' : '', shown.line ? 'line' : ''].join(' ') },
+  const card = h('li', { class: [index === selected ? 'selected' : '', row.sold ? 'sold' : '', row.pinned ? 'pinned' : ''].join(' ') },
     ...(row.tick ? [box ? box(row, index) : h('span', { class: 'tick' }, BOXES[row.tick.state])] : []),
     h('span', { class: 'text', title: shown.meta ? `${shown.title} · ${shown.meta}` : shown.title }, h('strong', {}, shown.title), ...(shown.meta ? [h('span', { class: 'dim' }, shown.meta)] : [])),
     ...(row.open ? [h('span', { class: 'go dim' }, '›')] : []));

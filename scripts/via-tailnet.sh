@@ -10,7 +10,8 @@ set -euo pipefail
 if [[ -z "${TAILSCALE_EXIT_NODE:-}" ]]; then
   exec "$@"
 fi
-: "${TAILSCALE_STATE:?set the runner's tailnet identity}"
+# No apostrophe in the message: bash reads one inside ${...:?...} as an opening quote.
+: "${TAILSCALE_STATE:?set the tailnet identity of the runner}"
 
 version=1.104.4
 work=$(mktemp -d)

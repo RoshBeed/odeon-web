@@ -16,6 +16,8 @@ jobs:
       - run: uv run ruff check .
       - run: uv run ruff format --check .
       - run: uv run python -m unittest discover -s tests -v
+      # The scripts the Ingest workflow runs are otherwise first read on the day they are needed.
+      - run: for script in ../scripts/*.sh; do bash -n "$script"; done
   site:
     runs-on: ubuntu-latest
     defaults:

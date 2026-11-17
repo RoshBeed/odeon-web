@@ -128,13 +128,12 @@ footer kbd { color: var(--accent); font: inherit; }
 .bar .tools select { max-width: 78px; padding: 3px 4px; }
 .bar .tools button { padding: 3px 7px; }
 .bar .sorter { display: flex; gap: 4px; }
-.column .cards li { padding: 6px; }
-.column .cards li.line { padding: 3px 6px; }
-/* Films and showtimes take one line each: the name, then a few facts kept whole; hovering shows the rest. */
-.column .cards li.line .text { flex-direction: row; gap: 12px; align-items: baseline; white-space: nowrap; }
-.column .cards li.line strong { flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: pre; }
-.column .cards li.line .dim { flex: 0 0 auto; max-width: 50%; overflow: hidden; text-overflow: ellipsis; }
-.column .cards li.line .go { display: none; }
+.column .cards li { padding: 3px 6px; }
+/* Every row takes one line: the name, then a few facts kept whole; hovering shows the rest. */
+.column .cards li .text { flex-direction: row; gap: 12px; align-items: baseline; white-space: nowrap; }
+.column .cards li strong { flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: pre; }
+.column .cards li .dim { flex: 0 0 auto; max-width: 50%; overflow: hidden; text-overflow: ellipsis; }
+.column .cards li .go { display: none; }
 .column .cards li.selected { background: var(--panel); }
 .column.focused .cards li.selected { background: var(--select); color: #fff; }
 .column.focused .cards li.selected .dim { color: #cfe2f7; }
@@ -155,3 +154,4 @@ footer kbd { color: var(--accent); font: inherit; }
 .facet li.selected { background: var(--panel); }
 .column.focused .facet li.selected { background: var(--select); color: #fff; }
 .column.focused .facet li.selected .dim, .column.focused .facet li.selected strong { color: #fff; }
+.column .cards .tick { padding: 0 4px 0 0; font-size: 1rem; }

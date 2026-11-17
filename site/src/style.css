@@ -129,6 +129,12 @@ footer kbd { color: var(--accent); font: inherit; }
 .bar .tools button { padding: 3px 7px; }
 .bar .sorter { display: flex; gap: 4px; }
 .column .cards li { padding: 6px; }
+.column .cards li.line { padding: 3px 6px; }
+/* Films and showtimes take one line each: the name, then a few facts kept whole; hovering shows the rest. */
+.column .cards li.line .text { flex-direction: row; gap: 12px; align-items: baseline; white-space: nowrap; }
+.column .cards li.line strong { flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: pre; }
+.column .cards li.line .dim { flex: 0 0 auto; max-width: 50%; overflow: hidden; text-overflow: ellipsis; }
+.column .cards li.line .go { display: none; }
 .column .cards li.selected { background: var(--panel); }
 .column.focused .cards li.selected { background: var(--select); color: #fff; }
 .column.focused .cards li.selected .dim { color: #cfe2f7; }

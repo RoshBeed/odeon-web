@@ -1,15 +1,13 @@
 // How ODEON's raw tags and addresses are grouped and named for people.
 
-const PICTURE = new Set(['IMAX', 'IMAX 3D_Web', '3D - Web', '4K', 'Dolby', 'Laser', 'iSense', 'XL Web']);
+// A picture format, or one of ODEON's variants of it: "IMAX 3D_Web", "XL 3D Web", "Laser 3D".
+const PICTURE = /^(IMAX|3D|4K|Dolby|Laser|iSense|XL|Infinity Vision)\b/;
 const SUBTITLES = new Set(['English (Sub)', 'Open Captioned']);
 // Seat types ODEON also lists among a showing's tags; the Seating menu covers them.
 const SEATS = new Set(['Recliner', 'ODEON Luxe', 'Luxe Suite', 'VIP Bed']);
-const ACCESS = new Set(['Wheelchair Accessible', 'Audio Described', 'Autism Friendly', 'Flash Warning']);
+const ACCESS = new Set(['Wheelchair Accessible', 'Audio Described', 'Autism Friendly', 'Flash Warning', 'Watchword']);
 const PRICING = new Set(['Saver', 'Bargain Wednesday']);
 const LABELS: Record<string, string> = {
-  'IMAX 3D_Web': 'IMAX 3D',
-  '3D - Web': '3D',
-  'XL Web': 'XL',
   'English (Sub)': 'English subtitles',
   'Open Captioned': 'Captioned',
 };
@@ -17,7 +15,7 @@ const LABELS: Record<string, string> = {
 export type TagKind = 'Picture' | 'Language' | 'Accessibility' | 'Events' | 'Seating' | 'Pricing';
 
 export function tagKind(tag: string): TagKind {
-  if (PICTURE.has(tag)) return 'Picture';
+  if (PICTURE.test(tag)) return 'Picture';
   if (tag.endsWith(' (Audio)') || tag === 'Dubbed' || SUBTITLES.has(tag)) return 'Language';
   if (ACCESS.has(tag)) return 'Accessibility';
   if (SEATS.has(tag)) return 'Seating';
@@ -25,7 +23,8 @@ export function tagKind(tag: string): TagKind {
   return 'Events'; // anything new ODEON invents shows up here
 }
 
-export const tagLabel = (tag: string) => LABELS[tag] ?? tag.replace(/ \(Audio\)$/, '');
+/** Without what ODEON adds for its own use: "Hindi (Audio)", "3D - Web", "XL 3D Web". */
+export const tagLabel = (tag: string) => LABELS[tag] ?? tag.replace(/ \(Audio\)$/, '').replace(/[ _-]+web$/i, '');
 
 /** The tags worth a table column: picture and language. */
 export function formats(tags: string[], kinds: TagKind[] = ['Picture', 'Language']): string {

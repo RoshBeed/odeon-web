@@ -49,6 +49,10 @@ interface View {
   table(ui: Ui): Table;
   /** A short fixed list (the menu, the settings) that needs no search or sort. */
   plain?: boolean;
+  /** A page about one thing (a showing): its details come before its list. */
+  lead?: boolean;
+  /** In a column the list scrolls on its own, so the details under it stay in view (a film). */
+  split?: boolean;
   /** True when showings() sorts and searches (the showtimes tables). */
   paged?: boolean;
   /** Keys that act on the page itself, not on a row. */
@@ -215,7 +219,7 @@ function welcomeView(): View {
       ['1. Your cinemas', 'open Cinemas or Location and tick the ones you go to. Everything then shows only those.'],
       ['2. Bookmark', 'your choices are part of the page address; nothing is saved in the browser. Bookmark the page and it opens the same way anywhere.'],
       ['Now', chosen],
-      ['Keys', '↑ ↓ move · → or Enter open · ← or Esc back · / search · s sort · Space tick'],
+      ...(narrow.matches ? [] : [['Keys', '↑ ↓ move · → or Enter open · ← or Esc back · / search · s sort · Space tick'] as [string, string]]),
     ]),
   );
   return { title: 'Welcome', intro, table: () => ({ columns: [], rows: [], total: 0 }), keys: { Enter: enter, ArrowRight: enter } };
@@ -234,8 +238,8 @@ function menuView(): View {
       { cells: ['Films', count(home.films, 'film'), count(home.showings, 'showing')], open: 'films' },
       { cells: ['Cinemas', count(home.allCinemas, 'cinema'), ticks.size ? `${count(ticks.size, 'cinema')} ticked` : 'all'], open: 'cinemas' },
       { cells: ['Location', count(places.size, 'location'), 'browse or tick cinema groups'], open: 'locations' },
-      { cells: ['Tonight', count(home.tonight, 'screening'), count(home.tonightFilms, 'film')], open: 'tonight' },
-      { cells: ['This weekend', count(home.weekendShows, 'screening'), `${count(home.weekendFilms, 'film')} · ${day(first)} – ${day(last)}${db.fullUntil && first > db.fullUntil ? ' · advance bookings only so far' : ''}`], open: 'weekend' },
+      { cells: ['Today', count(home.tonight, 'showing'), count(home.tonightFilms, 'film')], open: 'today' },
+      { cells: ['This weekend', count(home.weekendShows, 'showing'), `${count(home.weekendFilms, 'film')} · ${day(first)} – ${day(last)}${db.fullUntil && first > db.fullUntil ? ' · advance bookings only so far' : ''}`], open: 'weekend' },
       { cells: ['Opening soon', count(home.soon, 'film'), home.next ? `next: ${home.next.title} (${fullDate(home.next.release)})` : ''], open: 'soon' },
       { cells: ['Dates', count(home.days, 'day'), home.from ? `${day(home.from)} – ${fullDate(home.to)}` : ''], open: 'dates' },
       { cells: ['Screens', count(screens.length, 'screen'), 'by size, with formats'], open: 'screens' },
@@ -249,7 +253,7 @@ function menuView(): View {
         const busiest = [...found].sort((a, b) => b.showings - a.showings).map((row) => row.name);
         return { cells: [name, count(found.length, noun), some(busiest)], open: path('by', kind) };
       }),
-      { cells: ['All showtimes', count(home.showings, 'screening'), 'every film, cinema and day'], open: 'all' },
+      { cells: ['All showtimes', count(home.showings, 'showing'), 'every film, cinema and day'], open: 'all' },
       { cells: ['Settings', '', 'event cinema, layout, hidden films · copy the address'], open: 'settings' },
     ];
   };
@@ -271,7 +275,7 @@ function filmsView(title = 'Films', filter: q.FilmFilter = {}): View {
       film: film.id,
       card: {
         title: film.title,
-        meta: [film.certificate || 'TBC', film.runtime ? `${film.runtime} min` : '', film.imdb ? `IMDb ${film.imdb.toFixed(1)}` : '', count(film.cinemas, 'cinema'), count(film.showings, 'showing')].filter(Boolean).join(' · '),
+        meta: [film.certificate || 'TBC', film.runtime ? `${film.runtime} min` : '', film.imdb ? `IMDb ${film.imdb.toFixed(1)}` : '', count(film.cinemas, 'cinema'), count(film.showings, 'showing'), film.from > scope().today ? `from ${day(film.from)}` : ''].filter(Boolean).join(' · '),
       },
     })));
     return local(columns, rows, ui, Object.keys(filter).length ? undefined : allRow('all', 'every showtime, whatever the film'));
@@ -345,6 +349,7 @@ function filmView(id: string): View {
   return {
     title: film.title,
     intro: filmIntro(film),
+    split: true,
     table: (ui) => local(columns, rows, ui, allRow(path('film', id, 'all'), 'every showtime of this film')),
     keys: { h: () => { toggle(hidden, [id]); render(); } },
   };
@@ -595,6 +600,7 @@ function showView(cinema: string, id: string): View {
   return {
     title: `${show.title} · ${show.time}`,
     plain: true,
+    lead: true,
     intro,
     table: (ui) => (rows.length ? local(columns, rows, ui) : { columns: [], rows: [], total: 0 }),
     keys: { b: () => window.open(book, '_blank', 'noopener'), c: calendar },
@@ -630,7 +636,7 @@ function viewFor(route: string): View {
       if (!menu) return missing('There is no such page.');
       return b ? filmsView(b, { [menu[1]]: b }) : facetView(menu[0], menu[1]);
     }
-    case 'tonight': return showingsView('Tonight', { from: today, to: today });
+    case 'today': case 'tonight': return showingsView('Today', { from: today, to: today });
     case 'weekend': { const [from, to] = q.weekend(today); return showingsView('This weekend', { from, to }); }
     case 'all': return showingsView('All showtimes', {});
     case 'date': return showingsView(`${day(a)} ${a.slice(0, 4)}`, { from: a, to: a });
@@ -655,7 +661,7 @@ function viewFor(route: string): View {
     }
     case 'find': return {
       title: 'Find showtimes',
-      intro: h('p', { class: 'empty' }, 'Choose a day, a film, a cinema and a format together; the showtimes that match stay in view. It needs a wide screen.'),
+      intro: h('p', { class: 'empty' }, 'Choose a day, a film, a cinema and a format together; the showtimes that match stay in view.' + (narrow.matches ? ' It needs a wider screen than this one.' : '')),
       table: () => ({ columns: [], rows: [], total: 0 }),
     };
     default: return missing('There is no such page.');
@@ -754,6 +760,21 @@ function cardList(table: Table, selected: number, pick: (index: number) => void)
 const bar = (title: string, ...beside: Node[]) => h('div', { class: 'bar' }, h('h2', { title }, title), ...beside);
 const tally = (table: Table) => (table.columns.length ? [h('span', { class: 'dim' }, table.total.toLocaleString('en-GB'))] : []);
 
+/** What goes under a column's heading: its list, then any details; a page about one thing leads with them. */
+function filled(view: View, list: Node[]): Node[] {
+  const details = view.intro ? [view.intro] : [];
+  return view.lead ? [...details, ...list] : [...list, ...details];
+}
+const columnClass = (view: View, kind = '') => `column${kind}${view.split ? ' split' : ''}`;
+/** As many whole columns as fit side by side, none narrower than 320px. */
+function fit() {
+  const strip = app.querySelector<HTMLElement>('.columns:not(.finder)');
+  if (!strip) return;
+  strip.style.setProperty('--column', `${strip.clientWidth / Math.max(1, Math.floor(strip.clientWidth / 320))}px`);
+  strip.scrollLeft = strip.scrollWidth; // keep the newest columns in view
+}
+addEventListener('resize', fit);
+
 /** A page that led here: its list, with the row that was followed highlighted. */
 function passed(segment: string, index: number, trail: string[]): HTMLElement {
   const { route: place, ui } = readPage('#/' + segment);
@@ -762,14 +783,17 @@ function passed(segment: string, index: number, trail: string[]): HTMLElement {
   const list = cardList(table, ui.selected, (row) => {
     jump(writePage(place, { ...ui, selected: row }, trail.slice(0, index)));
   });
-  return h('div', { class: 'column' }, bar(view.title, ...tally(table)), ...(table.columns.length ? [list] : []), ...(view.intro ? [view.intro] : []));
+  return h('div', { class: columnClass(view) }, bar(view.title, ...tally(table)), ...filled(view, table.columns.length ? [h('div', { class: 'list' }, list)] : []));
 }
 
 /** Show the highlighted row's page in the last column, before it is opened. */
 function preview() {
-  const box = app.querySelector('.preview');
+  const box = app.querySelector<HTMLElement>('.preview');
   if (!box) return;
   const row = selectedRow();
+  // A page with nothing to open has nothing to show here, and needs no empty column.
+  box.hidden = !current.table.rows.some((item) => item.open);
+  box.className = 'column preview';
   if (!row?.open) return box.replaceChildren();
   const target = row.open;
   if (!whole && needsEveryCinema(target, ticks)) {
@@ -779,14 +803,15 @@ function preview() {
   const view = viewFor(target);
   const table = view.table({ ...PLAIN });
   const shown = { ...table, rows: table.rows.slice(0, 50) };
+  box.className = columnClass(view, ' preview');
   box.replaceChildren(
     bar(view.title, ...tally(table)),
-    ...(table.columns.length ? [cardList(shown, -1, (index) => {
-      noteNow();
-      jump(writePage(target, { ...PLAIN, selected: index }, here()));
-    })] : []),
-    ...(table.total > shown.rows.length ? [h('p', { class: 'dim' }, `and ${count(table.total - shown.rows.length, 'more row')}`)] : []),
-    ...(view.intro ? [view.intro] : []),
+    ...filled(view, table.columns.length ? [h('div', { class: 'list' },
+      cardList(shown, -1, (index) => {
+        noteNow();
+        jump(writePage(target, { ...PLAIN, selected: index }, here()));
+      }),
+      ...(table.total > shown.rows.length ? [h('p', { class: 'dim' }, `and ${count(table.total - shown.rows.length, 'more row')}`)] : []))] : []),
   );
 }
 function switchLayout() {
@@ -796,14 +821,15 @@ function switchLayout() {
 }
 
 /** The line at the foot of every page: the keys, and how fresh the listings are. */
+const keyHints = (hints: string[]) => hints.flatMap((hint) => {
+  const [keys, ...words] = hint.split(' ');
+  return [h('kbd', {}, keys), ` ${words.join(' ')}   `];
+});
 function footer(hints: string[]): HTMLElement {
   const stamp = db.ingested;
   const old = stamp !== null && Date.now() - Date.parse(stamp) > 8 * 86400000;
   return h('footer', {},
-    h('span', { class: 'keys' }, ...hints.flatMap((hint) => {
-      const [keys, ...words] = hint.split(' ');
-      return [h('kbd', {}, keys), ` ${words.join(' ')}   `];
-    })),
+    h('span', { class: 'keys' }, ...keyHints(hints)),
     h('span', { class: 'status' },
       `listings from ${stamp ? day(stamp) : 'no ingest yet'}`,
       ...(db.fullUntil ? [` · full to ${day(db.fullUntil)}`] : []),
@@ -815,10 +841,10 @@ function footer(hints: string[]): HTMLElement {
 // other three leave; the showtimes that match are always in view beside them.
 
 const FINDER: { facet: keyof q.Pick; title: string; width: number }[] = [
-  { facet: 'day', title: 'Day', width: 190 },
+  { facet: 'day', title: 'Day', width: 170 },
   { facet: 'film', title: 'Film', width: 300 },
-  { facet: 'cinema', title: 'Cinema', width: 210 },
-  { facet: 'format', title: 'Format', width: 190 },
+  { facet: 'cinema', title: 'Cinema', width: 180 },
+  { facet: 'format', title: 'Format', width: 150 },
 ];
 /** The finder's key handler while it is on screen. */
 let finder: ((event: KeyboardEvent) => void) | null = null;
@@ -862,10 +888,10 @@ function showFinder(query: string): (event: KeyboardEvent) => void {
   const today = scope().today;
   /** How a choice reads, and a note beside its count. */
   const label: Record<keyof q.Pick, (value: string) => [string, string]> = {
-    day: (value) => [day(value) + (value === today ? ' · today' : ''), db.fullUntil && value > db.fullUntil ? 'advance' : ''],
+    day: (value) => [value === today ? 'Today' : day(value), ''],
     film: (value) => {
       const film = q.film(db, value);
-      return [film?.title ?? value, film?.imdb ? film.imdb.toFixed(1) : ''];
+      return [film?.title ?? value, film?.imdb ? `★${film.imdb.toFixed(1)}` : ''];
     },
     cinema: (value) => [shortCinema(names.get(value) ?? value), ''],
     format: (value) => [tagLabel(value), ''],
@@ -894,8 +920,7 @@ function showFinder(query: string): (event: KeyboardEvent) => void {
       const near = view.table({ ...PLAIN });
       detail.replaceChildren(
         bar(view.title),
-        ...(near.columns.length ? [cardList(near, -1, (index) => leave(near.rows[index].open!))] : []),
-        ...(view.intro ? [view.intro] : []));
+        ...filled(view, near.columns.length ? [cardList(near, -1, (index) => leave(near.rows[index].open!))] : []));
     } else {
       detail.replaceChildren();
     }
@@ -914,13 +939,16 @@ function showFinder(query: string): (event: KeyboardEvent) => void {
       const picked = pick[facet];
       if (picked && !values.includes(picked)) values.unshift(picked); // a choice the others have emptied stays in view
       const all = [undefined, ...values];
-      lists[index].replaceChildren(...all.map((value) => {
+      // Days past the published week are set apart, once, instead of each saying so.
+      const advance = facet === 'day' && db.fullUntil ? values.find((value) => value > db.fullUntil!) : undefined;
+      lists[index].replaceChildren(...all.flatMap((value) => {
         const [name, note] = value === undefined ? ['All', ''] : label[facet](value);
-        const item = h('li', { class: [value === picked ? 'selected' : '', value === undefined ? 'pinned' : ''].join(' ') },
+        const item = h('li', { class: [value === picked ? 'selected' : '', value === undefined ? 'pinned' : ''].join(' '), title: name },
           h('strong', {}, name),
-          h('span', { class: 'dim' }, [note, value === undefined ? '' : (count.get(value) ?? 0).toLocaleString('en-GB')].filter(Boolean).join(' · ')));
+          ...(note ? [h('span', { class: 'dim' }, note)] : []),
+          h('span', { class: 'dim count' }, value === undefined ? '' : (count.get(value) ?? 0).toLocaleString('en-GB')));
         item.onclick = () => { focus = index; choose(facet, value); };
-        return item;
+        return value !== undefined && value === advance ? [h('li', { class: 'note' }, 'advance bookings only'), item] : [item];
       }));
       return all;
     });
@@ -1011,14 +1039,13 @@ function render() {
     // Highlight the first match, not the All row above it, so that Enter opens what was searched for.
     if (ui.text && current.table.rows[0]?.pinned && current.table.rows.length > 1) move(1);
   };
-  const hints = ['↑↓ move', 'Enter open', 'Esc back', '/ search', 's sort', 'Space tick', 'h hide film', 't trailer', 'b book', 'c calendar', 'v columns'];
   const tools = h('div', { class: 'tools' }, search, h('span', { class: 'sorter' }), h('span', { class: 'pager' }));
   const list = h('div', { class: 'scroll' });
   // A column is its heading line, with the search and sort in it, then its list, then any details.
   const parts = side
-    ? [bar(view.title, tools), list, ...(view.intro ? [view.intro] : [])]
+    ? [bar(view.title, tools), ...filled(view, [list])]
     : narrow.matches
-      ? [tools, list, ...(view.intro ? [view.intro] : [])] // on a phone the list comes first
+      ? (view.lead ? [view.intro!, tools, list] : [tools, list, ...(view.intro ? [view.intro] : [])]) // on a phone a list comes first
       : [...(view.intro ? [view.intro] : []), tools, list];
   app.classList.toggle('side', side);
   app.replaceChildren(
@@ -1029,18 +1056,17 @@ function render() {
     ...(side
       ? [h('div', { class: 'columns' },
           ...trail.map(passed),
-          h('div', { class: 'column focused' }, ...parts),
+          h('div', { class: columnClass(view, ' focused') }, ...parts),
           h('div', { class: 'column preview' }))]
       : parts),
-    footer(hints),
+    footer([]),
   );
   current = { trail: side ? trail : [], route: key, view, ui, table: { columns: [], rows: [], total: 0 } };
   paint();
   window.scrollTo(0, 0);
-  const strip = app.querySelector('.columns');
   if (!ui.selected) app.querySelector('.focused')?.scrollTo(0, 0); // start a column at its top, above its details
   for (const followed of app.querySelectorAll('.column:not(.focused) .selected')) followed.scrollIntoView({ block: 'center' });
-  if (strip) strip.scrollLeft = strip.scrollWidth; // keep the newest columns in view
+  fit();
 }
 
 const BOXES = { all: '[x]', some: '[-]', none: '[ ]' };
@@ -1130,7 +1156,22 @@ function paint() {
   flip.setAttribute('aria-label', 'Reverse the order');
   app.querySelector('.sorter')!.replaceChildren(...(sortable.length ? [sorter, flip] : []));
 
-  app.querySelector<HTMLElement>('.tools')!.hidden = !table.columns.length || Boolean(view.plain);
+  // A list short enough to take in at a glance needs no search or sort.
+  const tools = app.querySelector<HTMLElement>('.tools')!;
+  tools.hidden = !table.columns.length || Boolean(view.plain) || (table.total < 8 && !ui.text);
+  // The keys that do something here, and no others.
+  const side = columns();
+  const [filmy, booking] = [table.rows.some((row) => row.film) || Boolean(view.keys?.h), table.rows.some((row) => row.book) || Boolean(view.keys?.b)];
+  app.querySelector('footer .keys')!.replaceChildren(...keyHints(!current.route ? ['Enter browse'] : [
+    table.rows.length > 1 ? '↑↓ move' : '',
+    table.rows.some((row) => row.open) ? (side ? '→ open' : 'Enter open') : '',
+    side ? '← back' : 'Esc back',
+    ...(tools.hidden ? [] : ['/ search', sortable.length ? 's sort' : '']),
+    ticking ? 'Space tick' : '',
+    ...(filmy ? ['h hide film', 't trailer'] : []),
+    ...(booking ? ['b book', 'c calendar'] : []),
+    narrow.matches ? '' : `v ${side ? 'pages' : 'columns'}`,
+  ].filter(Boolean)));
   app.querySelector('.pager')!.replaceChildren(
     h('span', { class: 'dim' }, columns() ? table.total.toLocaleString('en-GB') : count(table.total, 'row')));
   const rest = complete(table) ? null : h('p', { class: 'rest dim' }, 'more…');
@@ -1204,7 +1245,11 @@ document.addEventListener('keydown', (event) => {
     Home: () => move(-Infinity), End: () => move(Infinity),
     Enter: open, ArrowRight: open, Escape: back, ArrowLeft: back, Backspace: back,
     ' ': tick, s: nextSort, v: switchLayout,
-    t: () => (['.focused', '.preview', '#app'].map((where) => document.querySelector<HTMLElement>(`${where} .trailer button`)).find(Boolean))?.click(),
+    t: () => {
+      const play = ['.focused', '.preview', '#app'].map((where) => document.querySelector<HTMLElement>(`${where} .trailer button`)).find(Boolean);
+      play?.parentElement!.scrollIntoView({ block: 'nearest' }); // it may be further down its column
+      play?.click();
+    },
     '/': () => app.querySelector<HTMLInputElement>('.tools input')?.focus(),
     b: () => { const row = selectedRow(); if (row?.book) window.open(row.book, '_blank', 'noopener'); },
     c: () => selectedRow()?.calendar?.(),

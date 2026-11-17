@@ -57,14 +57,29 @@ test('arrow keys move through columns: films, a film, its showtimes, a showing',
 });
 
 test('a search highlights its first match, and Enter opens it', async ({ page }) => {
-  await menu(page, 'Films');
+  await menu(page, 'All showtimes');
   await page.keyboard.press('/');
-  await page.keyboard.type('padd');
-  await expect(cards(page, 'Films')).toHaveText([/^All/, /^Paddington/]);
-  await expect(cards(page, 'Films').nth(1)).toHaveClass(/selected/);
+  await page.keyboard.type('dune');
+  const rows = cards(page, 'All showtimes');
+  await expect(rows).toHaveCount(3);
+  await expect(rows.first()).toHaveClass(/selected/);
   await page.keyboard.press('Enter'); // leaves the search box
   await page.keyboard.press('Enter');
-  await expect(focused(page).locator('h2')).toHaveText('Paddington');
+  await expect(focused(page).locator('h2')).toContainText('Dune');
+});
+
+test('the window holds whole columns clear of the footer, and a row moved up to stays clear of its heading', async ({ page }) => {
+  await page.setViewportSize({ width: 1024, height: 700 });
+  await menu(page, 'All showtimes');
+  for (const [key, times] of [['ArrowDown', 40], ['ArrowUp', 30]] as const) for (let press = 0; press < times; press += 1) await page.keyboard.press(key);
+  const box = async (selector: string) => (await page.locator(selector).first().boundingBox())!;
+  const [strip, footer, bar, row, first] = [await box('.columns'), await box('footer'), await box('.focused .bar'), await box('.focused .selected'), await box('.column')];
+  expect(strip.y + strip.height).toBeLessThanOrEqual(footer.y + 1);
+  expect(row.y).toBeGreaterThanOrEqual(bar.y + bar.height - 1);
+  expect(strip.width / first.width).toBeCloseTo(Math.round(strip.width / first.width), 1);
+  // The footer names only the keys that do something on this page.
+  await expect(page.locator('footer .keys')).toHaveText(/move.*open.*back.*search.*sort.*book.*calendar/);
+  await expect(page.locator('footer .keys')).not.toHaveText(/tick|trailer/);
 });
 
 test('a long list draws more rows as the reader scrolls and as the highlight moves', async ({ page }) => {

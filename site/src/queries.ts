@@ -241,14 +241,16 @@ export interface FilmRow {
   cinemas: number;
   showings: number;
   next: string;
+  /** The day of its next showing. */
+  from: string;
 }
 
 export function films(l: Listings, scope: Scope, filter: FilmFilter = {}): FilmRow[] {
-  const found = new Map<Film, { cinemas: Set<string>; showings: number; next: string }>();
+  const found = new Map<Film, { cinemas: Set<string>; showings: number; next: string; from: string }>();
   for (const show of upcoming(l, scope)) {
     if (!show.film) continue;
     let row = found.get(show.film);
-    if (!row) found.set(show.film, (row = { cinemas: new Set(), showings: 0, next: show.startsAt }));
+    if (!row) found.set(show.film, (row = { cinemas: new Set(), showings: 0, next: show.startsAt, from: show.date }));
     row.cinemas.add(show.cinemaId);
     row.showings += 1;
   }
@@ -260,7 +262,7 @@ export function films(l: Listings, scope: Scope, filter: FilmFilter = {}): FilmR
       (!filter.distributor || film.distributor === filter.distributor))
     .map(([film, row]): FilmRow => ({
       id: film.id, title: film.title, certificate: film.certificate, runtime: film.runtime, release: film.release,
-      imdb: film.imdb, metacritic: film.metacritic, cinemas: row.cinemas.size, showings: row.showings, next: row.next,
+      imdb: film.imdb, metacritic: film.metacritic, cinemas: row.cinemas.size, showings: row.showings, next: row.next, from: row.from,
     }))
     .sort(by((film) => lower(film.title)));
 }

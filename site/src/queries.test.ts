@@ -67,7 +67,7 @@ describe('queries', () => {
   test('films carry ratings, cinema counts and their next showing', () => {
     expect(q.films(db, scope)[0]).toEqual({
       id: 'F1', title: 'Dune', certificate: '12A', runtime: 155, release: '2026-11-06',
-      imdb: 8.4, metacritic: 74, cinemas: 2, showings: 2, next: '2026-11-11T18:00:00Z',
+      imdb: 8.4, metacritic: 74, cinemas: 2, showings: 2, next: '2026-11-11T18:00:00Z', from: '2026-11-11',
     });
     const film = q.film(db, 'F1')!;
     expect([film.genres, film.people[0].name, film.imdbId]).toEqual([['Sci-Fi'], 'Denis Villeneuve', 'tt1']);
@@ -160,7 +160,8 @@ describe('queries', () => {
     sqlite.exec(`
       INSERT INTO films VALUES ('F1-IE', 'DUNE ', 150, '12', '2026-11-06', '[]', '[]', 'Warner IR', '', NULL),
                                ('F4', 'Live: Opera!', 180, '', '2026-11-01', '[]', '[]', '', '', NULL),
-                               ('F4-IE', 'Live Opera', 180, '', '2026-11-01', '[]', '[]', '', '', NULL);
+                               ('F4-IE', 'Live Opera', 180, '', '2026-11-01', '[]', '[]', '', '', NULL),
+                               ('F5', 'Screen Hire - 4 Hours', 240, '', '2026-11-01', '["Musical "]', '[]', '', '', NULL);
       INSERT INTO ratings VALUES ('F4-IE', 'imdb', 7.1, 'tt4');
       INSERT INTO availability VALUES ('001', 'F1-IE', '["NowShowing"]');
     `);
@@ -168,6 +169,12 @@ describe('queries', () => {
     screening('155-3', '155', 'F4', '2026-11-12', '19:00', { experiences: '["Event Cinema"]' });
     screening('155-4', '155', 'F4', '2026-11-13', '19:00', { experiences: '["Event Cinema"]' });
     screening('001-3', '001', 'F4-IE', '2026-11-12', '19:00'); // an event even where a showing lacks the tag
+    screening('001-4', '001', 'F5', '2026-11-12', '09:00', { experiences: '["3D - Web "]' }); // private hire, and names that end in a space
+    db = q.open(exportListings(sqlite));
+    expect(q.film(db, 'F5')!.genres).toEqual(['Musical']);
+    expect(q.showings(db, scope, { film: 'F5' }).rows[0].experiences).toEqual(['3D - Web']);
+    expect(q.showings(db, { ...scope, noEvents: true }, { film: 'F5' }).total).toBe(0);
+    sqlite.exec("DELETE FROM screenings WHERE film_id = 'F5'; DELETE FROM films WHERE id = 'F5'");
     db = q.open(exportListings(sqlite));
     expect(q.films(db, scope).map((film) => [film.id, film.title, film.showings, film.imdb])).toEqual([
       ['F1', 'Dune', 3, 8.4],

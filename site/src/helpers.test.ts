@@ -8,7 +8,11 @@ test('tags are grouped and renamed for people', () => {
   expect(['IMAX 3D_Web', 'Hindi (Audio)', 'English (Sub)', 'Audio Described', '£5 Web', 'Kids', 'Recliner'].map(tagKind)).toEqual([
     'Picture', 'Language', 'Language', 'Accessibility', 'Pricing', 'Events', 'Seating',
   ]);
-  expect(tagLabel('Hindi (Audio)')).toBe('Hindi');
+  // ODEON's variants of a picture format are picture formats too.
+  expect(['3D - Web', 'XL 3D Web', 'Laser 3D', 'Infinity Vision', 'Dolby', 'Dubbed', 'Watchword'].map(tagKind)).toEqual([
+    'Picture', 'Picture', 'Picture', 'Picture', 'Picture', 'Language', 'Accessibility',
+  ]);
+  expect(['Hindi (Audio)', '3D - Web', 'XL 3D Web', 'XL Web', 'IMAX'].map(tagLabel)).toEqual(['Hindi', '3D', 'XL 3D', 'XL', 'IMAX']);
   expect(formats(['IMAX 3D_Web', 'Saver', 'Wheelchair Accessible', 'English (Sub)', 'Kids'])).toBe('IMAX 3D, English subtitles');
 });
 

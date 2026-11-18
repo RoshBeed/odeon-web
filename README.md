@@ -30,9 +30,9 @@ or mouse.
 | / | Search the column you are in |
 | s | Order the column you are in (A–Z, most showings, or by rating) |
 | [ ] | Move the column you are in left or right |
-| x | Hide the column you are in |
-| o | Columns & settings: add, remove and order columns; event cinema, hidden films, your cinemas |
-| l | London only: show only Greater London's cinemas |
+| x | Remove the column you are in |
+| o | Settings: every cinema, London only or your own; add, remove and order columns; event cinema and hidden films |
+| l | Switch London only on or off |
 | h | Hide a film everywhere |
 | t | Play the trailer |
 | b | Book the highlighted showing on odeon.co.uk |

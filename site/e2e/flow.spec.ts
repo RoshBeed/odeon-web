@@ -1,7 +1,7 @@
 // The site in a real browser, driven the way a visitor drives it: by keys,
 // clicks and scrolling. The listings are the small set in listings.ts.
 import { expect, test, type Page } from '@playwright/test';
-import { day, listings } from './listings.ts';
+import { listings } from './listings.ts';
 
 const data = listings();
 const fetched: string[] = [];
@@ -15,150 +15,171 @@ test.beforeEach(async ({ page }) => {
   });
 });
 
-const column = (page: Page, title: string) => page.locator('.column', { has: page.locator('h2', { hasText: new RegExp(`^${title}$`) }) });
-const cards = (page: Page, title: string) => column(page, title).locator('.cards li:not(.day)');
-/** The column the keys act on. A page being previewed has the same title, so ask for this one by its place. */
-const focused = (page: Page) => page.locator('.column.focused');
-const menu = async (page: Page, entry: string) => {
-  await page.goto('/#/browse');
-  await cards(page, 'Browse').filter({ hasText: new RegExp(`^${entry}`) }).first().click();
-  await page.keyboard.press('ArrowRight');
-  await expect(focused(page).locator('h2')).toHaveText(entry);
-};
+const column = (page: Page, title: string) => page.locator('.column', { has: page.locator('.bar h2', { hasText: new RegExp(`^${title}$`) }) });
+const choices = (page: Page, title: string) => column(page, title).locator('.facet li:not(.note)');
+const showtimes = (page: Page) => page.locator('.column.showtimes .cards li:not(.day)');
+const titles = (page: Page) => page.locator('.columns .bar h2');
+const total = (page: Page) => page.locator('.column.showtimes .bar .count');
+/** Open an address and wait until the finder is drawn, so that keys pressed next reach it. */
+async function visit(page: Page, address: string) {
+  await page.goto(address);
+  await expect(page.locator('.column.showtimes .bar .count')).toHaveText(/\d/);
+}
 
-test('the welcome page leads into the menu, and back', async ({ page }) => {
-  await page.goto('/');
-  await expect(page.getByText('Browse the listings')).toBeVisible();
-  await page.keyboard.press('Enter');
-  await expect(column(page, 'Browse')).toHaveClass(/focused/);
-  await expect(cards(page, 'Browse').first()).toContainText('Find showtimes');
-  await page.keyboard.press('ArrowLeft');
-  await expect(page.getByText('Browse the listings')).toBeVisible();
+test('the site opens on the finder, with the default columns and a quick start', async ({ page }) => {
+  await visit(page, '/');
+  await expect(titles(page)).toHaveText(['Day', 'Film', 'Cinema', 'Picture', 'Showtimes', /./]);
+  await expect(total(page)).toHaveText('254'); // event cinema left out
+  await expect(choices(page, 'Film')).toHaveText([/^All/, /^Dune/, /^Paddington/]);
 });
 
-test('arrow keys move through columns: films, a film, its showtimes, a showing', async ({ page }) => {
-  await menu(page, 'Films');
-  await expect(cards(page, 'Films').first()).toContainText('All');
-  // Editions of one film are merged, and event cinema is left out.
-  await expect(cards(page, 'Films')).toHaveText([/^All/, /^Dune/, /^Paddington/]);
+test('keys choose in each column, each counts what the others leave, and the address keeps it', async ({ page }) => {
+  await visit(page, '/');
+  await page.keyboard.press('ArrowRight'); // to Film
+  await page.keyboard.press('ArrowDown'); // Dune
+  await expect(total(page)).toHaveText('3');
+  await expect(choices(page, 'Cinema')).toHaveText([/^All/, /^Aberdeen\s*1$/, /^Holloway\s*1$/, /^West End\s*1$/]);
+  await page.keyboard.press('ArrowRight');
+  await page.keyboard.press('ArrowRight'); // to Picture
+  await page.keyboard.press('ArrowDown'); // IMAX
+  await expect(total(page)).toHaveText('1');
+  await expect(page).toHaveURL(/#\/\?film=F1&picture=IMAX&col=4$/);
+  await page.reload();
+  await expect(total(page)).toHaveText('1');
+  await expect(column(page, 'Picture')).toHaveClass(/focused/);
+  await page.keyboard.press('Escape'); // the picture back to All
+  await expect(total(page)).toHaveText('3');
+});
+
+test('the highlighted showtime shows its details and its double bill, which can be followed', async ({ page }) => {
+  await visit(page, '/#/?film=F1&col=5');
   await page.keyboard.press('ArrowDown');
-  await expect(cards(page, 'Films').nth(1)).toHaveClass(/selected/);
-  await expect(page.locator('.preview h2')).toHaveText('Dune');
-  await page.keyboard.press('ArrowRight');
-  await expect(focused(page).locator('h2')).toHaveText('Dune');
-  await expect(focused(page).locator('.cards li').first()).toContainText('every showtime of this film');
-  await page.keyboard.press('ArrowRight'); // All: every showtime of the film
-  await expect(focused(page).locator('.cards li:not(.day)').last()).toContainText('19:00–21:35');
-  await expect(page).toHaveURL(/#\/browse\?row=\d+\|films\?row=2\|film\/F1\|film\/F1\/all$/);
-  await page.keyboard.press('ArrowLeft');
-  await page.keyboard.press('ArrowLeft');
-  await expect(column(page, 'Films')).toHaveClass(/focused/);
-  await expect(cards(page, 'Films').nth(1)).toHaveClass(/selected/);
+  await page.keyboard.press('ArrowUp');
+  const details = page.locator('.column.details');
+  await expect(details.locator('.bar h2')).toHaveText('Dune · 18:00');
+  await expect(details.locator('.bills li.day')).toHaveText('Straight after this');
+  await expect(details.locator('h3')).toHaveText('Dune'); // the film's own details follow
+  await details.locator('.bills li', { hasText: 'Paddington' }).click();
+  await expect(column(page, 'Film').locator('li.selected')).toContainText('Paddington');
+  await expect(details.locator('.bar h2')).toHaveText('Paddington · 20:50');
 });
 
-test('a search highlights its first match, and Enter opens it', async ({ page }) => {
-  await menu(page, 'All showtimes');
+test('the columns panel adds, moves and removes columns, and a bookmark keeps the view', async ({ page }) => {
+  await visit(page, '/');
+  await page.keyboard.press('o');
+  const panel = page.locator('dialog.panel');
+  await panel.getByLabel(/^\s*Screen each/).check();
+  await panel.getByRole('button', { name: 'Move Screen left' }).click();
+  await panel.getByRole('button', { name: 'Move Screen left' }).click(); // past Picture, then Cinema
+  await panel.getByLabel(/^\s*Picture IMAX/).uncheck();
+  await panel.getByRole('button', { name: 'Close' }).click();
+  await expect(titles(page)).toHaveText(['Day', 'Film', 'Screen', 'Cinema', 'Showtimes', /./]);
+  await expect(choices(page, 'Screen').nth(1)).toContainText('West End · #1300 seats');
+  const bookmark = page.url();
+  expect(bookmark).toMatch(/#\/\?cols=day,film,screen,cinema$/);
+  await page.goto('about:blank');
+  await visit(page, bookmark);
+  await expect(titles(page)).toHaveText(['Day', 'Film', 'Screen', 'Cinema', 'Showtimes', /./]);
+});
+
+test('[ and ] move the column in hand, and x hides it', async ({ page }) => {
+  await visit(page, '/#/?col=2');
+  await page.keyboard.press(']');
+  await expect(titles(page)).toHaveText(['Day', 'Cinema', 'Film', 'Picture', 'Showtimes', /./]);
+  await expect(column(page, 'Film')).toHaveClass(/focused/);
+  await page.keyboard.press('[');
+  await page.keyboard.press('[');
+  await expect(titles(page)).toHaveText(['Film', 'Day', 'Cinema', 'Picture', 'Showtimes', /./]);
+  await page.keyboard.press('x');
+  await expect(titles(page)).toHaveText(['Day', 'Cinema', 'Picture', 'Showtimes', /./]);
+  await expect(page).toHaveURL(/cols=day,cinema,picture/);
+});
+
+test('/ searches the column in hand, and s orders it', async ({ page }) => {
+  await visit(page, '/#/?col=2');
   await page.keyboard.press('/');
-  await page.keyboard.type('dune');
-  const rows = cards(page, 'All showtimes');
-  await expect(rows).toHaveCount(3);
-  await expect(rows.first()).toHaveClass(/selected/);
+  await page.keyboard.type('padd');
+  await expect(choices(page, 'Film')).toHaveText([/^All/, /^Paddington/]);
   await page.keyboard.press('Enter'); // leaves the search box
-  await page.keyboard.press('Enter');
-  await expect(focused(page).locator('h2')).toContainText('Dune');
+  await page.keyboard.press('ArrowDown');
+  await expect(total(page)).toHaveText('251');
+  await page.keyboard.press('Escape'); // All again
+  await page.keyboard.press('Escape'); // and the search cleared
+  await expect(choices(page, 'Film')).toHaveText([/^All/, /^Dune/, /^Paddington/]);
+  await page.keyboard.press('s'); // by how many showings
+  await expect(choices(page, 'Film')).toHaveText([/^All/, /^Paddington/, /^Dune/]);
+  await expect(page).toHaveURL(/order=film:count/);
 });
 
-test('the window holds whole columns clear of the footer, and a row moved up to stays clear of its heading', async ({ page }) => {
+test('a long list of showtimes draws more as the reader scrolls and as the highlight moves', async ({ page }) => {
+  await visit(page, '/#/?col=5');
+  await expect(showtimes(page)).toHaveCount(100);
+  await page.locator('.column.showtimes').evaluate((element) => element.scrollTo(0, element.scrollHeight));
+  await expect(showtimes(page)).toHaveCount(200);
+  for (let press = 0; press < 205; press += 1) await page.keyboard.press('ArrowDown');
+  await expect(showtimes(page)).toHaveCount(254);
+  await expect(showtimes(page).nth(205)).toHaveClass(/selected/);
+});
+
+test('the window holds the columns clear of the footer, and a highlighted row clear of its heading', async ({ page }) => {
   await page.setViewportSize({ width: 1024, height: 700 });
-  await menu(page, 'All showtimes');
+  await visit(page, '/#/?col=5');
   for (const [key, times] of [['ArrowDown', 40], ['ArrowUp', 30]] as const) for (let press = 0; press < times; press += 1) await page.keyboard.press(key);
   const box = async (selector: string) => (await page.locator(selector).first().boundingBox())!;
-  const [strip, footer, bar, row, first] = [await box('.columns'), await box('footer'), await box('.focused .bar'), await box('.focused .selected'), await box('.column')];
+  const [strip, footer, bar, row] = [await box('.columns'), await box('footer'), await box('.showtimes .bar'), await box('.showtimes .selected')];
   expect(strip.y + strip.height).toBeLessThanOrEqual(footer.y + 1);
   expect(row.y).toBeGreaterThanOrEqual(bar.y + bar.height - 1);
-  expect(strip.width / first.width).toBeCloseTo(Math.round(strip.width / first.width), 1);
-  // The footer names only the keys that do something on this page.
-  await expect(page.locator('footer .keys')).toHaveText(/move.*open.*back.*search.*sort.*book.*calendar/);
-  await expect(page.locator('footer .keys')).not.toHaveText(/tick|trailer/);
 });
 
-test('a long list draws more rows as the reader scrolls and as the highlight moves', async ({ page }) => {
-  await menu(page, 'All showtimes');
-  const rows = cards(page, 'All showtimes');
-  await expect(rows).toHaveCount(100);
-  await column(page, 'All showtimes').evaluate((element) => element.scrollTo(0, element.scrollHeight));
-  await expect(rows).toHaveCount(200);
-  for (let press = 0; press < 205; press += 1) await page.keyboard.press('ArrowDown');
-  await expect(rows).toHaveCount(254);
-  await expect(rows.nth(205)).toHaveClass(/selected/);
-});
-
-test('ticked cinemas go in the address and narrow every list', async ({ page }) => {
-  await menu(page, 'Cinemas');
-  await cards(page, 'Cinemas').filter({ hasText: 'London West End' }).locator('.tick').click();
-  await expect(page).toHaveURL(/\?cinemas=155#/);
-  await page.goto('about:blank'); // a fresh visit, as from a bookmark
-  await page.goto('/?cinemas=155#/browse');
-  await expect(cards(page, 'Browse').filter({ hasText: /^Films/ })).toContainText('2 films · 2 showings');
-  expect(fetched).toEqual(['listings.json.gz', 'london.json.gz']); // only London's once only London is ticked
-});
-
-test('the London only tick in the header ticks Greater London alone, and unticking it brings back every cinema', async ({ page }) => {
-  await page.goto('/#/browse');
-  const london = page.getByLabel('London only');
+test('London only, in the header, ticks Greater London as ?cinemas=london and loads only its listings', async ({ page }) => {
+  await visit(page, '/');
+  const london = page.locator('header').getByLabel('London only');
   await london.check();
   await expect(page).toHaveURL(/\?cinemas=london#/);
-  await expect(cards(page, 'Browse').filter({ hasText: /^Cinemas/ })).toContainText('19 cinemas ticked');
+  await expect(choices(page, 'Cinema')).toHaveText([/^All/, /^Holloway/, /^West End/]);
   const bookmark = page.url();
   await page.goto('about:blank'); // a fresh visit, as from the bookmark
   fetched.length = 0;
-  await page.goto(bookmark);
+  await visit(page, bookmark);
   await expect(london).toBeChecked();
   expect(fetched).toEqual(['london.json.gz']);
   await page.keyboard.press('l'); // the key does the same
   await expect(london).not.toBeChecked();
-  await expect(cards(page, 'Browse').filter({ hasText: /^Cinemas/ })).toContainText('all');
+  await expect(choices(page, 'Cinema')).toHaveText([/^All/, /^Aberdeen/, /^Holloway/, /^West End/]);
   expect(fetched).toEqual(['london.json.gz', 'listings.json.gz']); // every cinema, fetched once needed
-  await page.goto('/#/find');
-  await page.getByLabel('London only').check();
-  await expect(page).toHaveURL(/\?cinemas=london#\/find/);
 });
 
-test('event cinema appears once it is switched on in the settings', async ({ page }) => {
-  await menu(page, 'Settings');
-  await cards(page, 'Settings').filter({ hasText: 'Event cinema' }).click();
-  await page.keyboard.press('Enter');
+test('event cinema and single cinemas are chosen in the settings', async ({ page }) => {
+  await visit(page, '/');
+  await page.getByRole('button', { name: 'Columns & settings' }).click();
+  const panel = page.locator('dialog.panel');
+  await panel.getByLabel(/Event cinema/).check();
   await expect(page).toHaveURL(/\?show=events#/);
-  await page.goto('/?show=events#/browse|films');
-  await expect(cards(page, 'Films')).toHaveText([/^All/, /^Dune/, /^Opera Live/, /^Paddington/]);
+  await panel.getByLabel(/^ ?Aberdeen$/).check();
+  await expect(page).toHaveURL(/cinemas=001/);
+  await page.keyboard.press('Escape');
+  await expect(choices(page, 'Film')).toHaveText([/^All/, /^Dune/]);
+  await visit(page, '/?show=events#/');
+  await expect(choices(page, 'Film')).toHaveText([/^All/, /^Dune/, /^Opera Live/, /^Paddington/]);
 });
 
-test('a showing lists the film that can follow it', async ({ page }) => {
-  await page.goto('/#/browse|show/155/A');
-  await expect(column(page, 'Dune · 18:00').locator('li.day')).toHaveText('Straight after this');
-  await expect(cards(page, 'Dune · 18:00')).toHaveText([/Paddington15 min gap/]);
+test('addresses from before open the finder with what they chose', async ({ page }) => {
+  await visit(page, '/#/find?film=F1&format=IMAX&col=4');
+  await expect(total(page)).toHaveText('1');
+  await visit(page, '/?x=1#/browse?row=2|films?row=5');
+  await expect(titles(page)).toHaveText(['Day', 'Film', 'Cinema', 'Picture', 'Showtimes', /./]);
 });
 
-test('the finder narrows each column by the others', async ({ page }) => {
-  await page.goto('/#/find');
-  const total = column(page, 'Showtimes').locator('.bar .dim');
-  await expect(total).toHaveText('254');
-  await column(page, 'Film').getByText('Dune').click();
-  await expect(total).toHaveText('3');
-  await expect(column(page, 'Cinema').locator('li')).toHaveText([/^All/, /^Aberdeen1$/, /^Holloway1$/, /^West End1$/]);
-  await column(page, 'Format').getByText('IMAX').click();
-  await expect(total).toHaveText('1');
-  await expect(page).toHaveURL(/#\/find\?film=F1&format=IMAX&col=4$/);
-  await page.keyboard.press('Escape'); // the format back to All
-  await expect(total).toHaveText('3');
-});
-
-test('a phone shows one page at a time, as cards to tap', async ({ page }) => {
+test('a phone shows one column at a time, and a choice moves on to the next', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 800 });
-  await page.goto('/#/films');
-  await expect(page.locator('.columns')).toHaveCount(0);
-  await page.locator('.cards li', { hasText: 'Dune' }).click();
-  await expect(page).toHaveURL(/#\/film\/F1$/);
-  await expect(page.locator('.cards li').first()).toContainText('All');
-  expect(day(1) > day(0)).toBe(true);
+  await visit(page, '/');
+  await expect(page.locator('.column:visible .bar h2')).toHaveText('Day');
+  await page.locator('.column.day li', { hasText: 'All' }).first().click();
+  await page.locator('.steps button', { hasText: 'Film' }).click();
+  await page.locator('.column.film li', { hasText: 'Dune' }).click();
+  await expect(page.locator('.column:visible .bar h2')).toHaveText('Cinema');
+  await page.locator('.steps button', { hasText: 'Showtimes' }).click();
+  await showtimes(page).first().click();
+  await expect(page.locator('.column:visible')).toHaveClass(/details/);
+  await expect(page.locator('.column.details .actions a')).toHaveText('Book on odeon.co.uk');
 });

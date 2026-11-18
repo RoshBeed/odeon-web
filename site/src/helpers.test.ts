@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest';
 import { ics } from './calendar';
-import { needsEveryCinema, readChoice, readPage, writeChoices, writePage } from './choices';
+import { DEFAULT_COLUMNS, needsEveryCinema, readChoice, readView, writeChoices, writeView } from './choices';
 import type { ShowingDetail } from './queries';
 import { certificateAge, formats, LONDON, place, tagKind, tagLabel } from './tags';
 
@@ -53,28 +53,26 @@ test('choices are read from and written to the address', () => {
   expect(writeChoices({ cinemas: new Set(), hidden: new Set() })).toBe('');
 });
 
-test("Greater London's listings will do until a page is about another cinema", () => {
-  const london = new Set(['155', '090']);
-  expect(['', 'films', 'all', 'cinema/155', 'film/F1/090', 'film/F1', 'film/F1/all'].map((route) => needsEveryCinema(route, london))).toEqual(
-    [false, false, false, false, false, false, false]);
-  expect(['cinemas', 'locations', 'location/Bath', 'cinema/001', 'show/001/1', 'film/F1/001'].map((route) => needsEveryCinema(route, london))).toEqual(
-    [true, true, true, true, true, true]);
-  expect(needsEveryCinema('', new Set())).toBe(true);
-  expect(needsEveryCinema('', new Set(['155', '001']))).toBe(true);
+test("Greater London's listings will do while only its cinemas are ticked", () => {
+  expect(needsEveryCinema(new Set())).toBe(true);
+  expect(needsEveryCinema(new Set(['155', '090']))).toBe(false);
+  expect(needsEveryCinema(new Set(['155', '001']))).toBe(true);
 });
 
-test('a page carries its sort, search and row in the address', () => {
-  const plain = { order: null, descending: false, text: '', page: 0, selected: 0 };
-  expect(readPage('')).toEqual({ trail: [], route: '', ui: plain });
-  expect(readPage('#/film/F1/155')).toEqual({ trail: [], route: 'film/F1/155', ui: plain });
-  const busy = { order: 3, descending: true, text: 'wick & co', page: 2, selected: 204 };
-  expect(writePage('films', busy)).toBe('#/films?sort=3&desc=1&q=wick%20%26%20co&row=205');
-  expect(readPage(writePage('films', busy))).toEqual({ trail: [], route: 'films', ui: busy });
-  // The columns view: the pages that led here come first.
-  expect(writePage('film/F1', plain, ['?row=2', 'films?sort=3'])).toBe('#/?row=2|films?sort=3|film/F1');
-  expect(readPage('#/?row=2|films?sort=3|film/F1')).toEqual({ trail: ['?row=2', 'films?sort=3'], route: 'film/F1', ui: plain });
-  expect(writePage('', plain)).toBe('#/');
-  expect(readPage('#/films?sort=x&row=0').ui).toEqual({ ...plain, order: 0 });
+test('the view is read from and written to the address', () => {
+  const view = readView('#/?cols=film,cinema,screen&film=HO1&cinema=155&order=film:rating&sort=seats&desc=1&q=imax&col=3&row=12');
+  expect(view).toEqual({
+    columns: ['film', 'cinema', 'screen'], picks: { film: 'HO1', cinema: '155' }, orders: { film: 'rating' },
+    focus: 2, row: 11, sort: 'seats', descending: true, text: 'imax',
+  });
+  expect(writeView(view)).toBe('#/?cols=film,cinema,screen&film=HO1&cinema=155&order=film:rating&sort=seats&desc=1&q=imax&col=3&row=12');
+  // The default view is a bare address; unknown columns and choices for hidden columns are dropped.
+  expect(writeView(readView('#/'))).toBe('#/');
+  expect(readView('#/?cols=film,nonsense,film&day=2026-11-20').columns).toEqual(['film']);
+  expect(readView('#/?cols=film&day=2026-11-20').picks).toEqual({});
+  // Addresses from before: the finder's own, with its format column, and any other page.
+  expect(readView('#/find?film=F1&format=IMAX&col=4')).toMatchObject({ columns: DEFAULT_COLUMNS, picks: { film: 'F1', picture: 'IMAX' }, focus: 3 });
+  expect(readView('#/browse?row=2|films?row=5')).toMatchObject({ columns: DEFAULT_COLUMNS, picks: {}, focus: 0, row: 0 });
 });
 
 test('certificates sort by age, with unrated films last', () => {

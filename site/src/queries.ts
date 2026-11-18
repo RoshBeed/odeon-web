@@ -1,3 +1,5 @@
+import { place, tagKind, type TagKind } from './tags';
+
 // Every question the site asks of the listings. The listings are held in
 // memory as plain arrays, so each answer is a loop: nothing here waits.
 
@@ -53,6 +55,8 @@ interface Show {
   place: string;
   /** What a search looks through; made the first time one does. */
   text?: string;
+  /** Its place in `Listings.shows`. */
+  index: number;
 }
 
 export interface Listings {
@@ -67,6 +71,8 @@ export interface Listings {
   events: Set<string>;
   /** Showings by cinema ID and ID; made the first time one is asked for. */
   byId?: Map<string, Show>;
+  /** What each showing offers each column, by its index; made the first time a column is shown. */
+  keys?: Map<string, string[][]>;
 }
 
 export function open(data: Data): Listings {
@@ -75,7 +81,7 @@ export function open(data: Data): Listings {
   const capacity = new Map(data.screens.map(([cinema, screen, seats]) => [`${cinema}/${screen}`, seats]));
   const lowered = new Map<string, string>();
   const low = (text = '') => lowered.get(text) ?? (lowered.set(text, lower(text)), lowered.get(text)!);
-  const shows = data.rows.map((row): Show => {
+  const shows = data.rows.map((row, index): Show => {
     const [cinemaId, id, filmId, date, startsAt, time, filmStartsAt, filmEndsAt, screen, screenId, experiences, seating, soldOut] =
       row.map((position) => data.values[position]) as never[];
     const [film, cinema] = [films.get(filmId), cinemas.get(cinemaId)];
@@ -87,6 +93,7 @@ export function open(data: Data): Listings {
       capacity: capacity.get(`${cinemaId}/${screenId}`) ?? null,
       title: low(film?.title),
       place: low(cinema?.name),
+      index,
     };
   });
   return {
@@ -131,26 +138,7 @@ export interface Showing {
   soldOut: boolean;
 }
 
-export interface ShowingFilter {
-  from?: string;
-  to?: string;
-  film?: string;
-  cinema?: string;
-  /** A screen's ID, within `cinema`. */
-  screen?: string;
-  /** A format or language tag exactly as ODEON names it. */
-  tag?: string;
-  /** A seat type, without its price tier. */
-  seat?: string;
-  text?: string;
-}
 
-export interface FilmFilter {
-  certificate?: string;
-  genre?: string;
-  person?: string;
-  distributor?: string;
-}
 
 const order = <T>(a: T, b: T) => (a < b ? -1 : a > b ? 1 : 0);
 const lower = (text: string) => text.toLowerCase();
@@ -180,92 +168,6 @@ function upcoming(l: Listings, scope: Scope, scoped = true): Show[] {
   return rest.filter((show) => (!ticked.size || ticked.has(show.cinemaId)) && !hidden.has(show.filmId));
 }
 
-// ODEON prices one seat type in tiers ("Recliner Saver"); the type is what matters.
-const seatType = (seat: string) => seat.replace(/ (Saver|Popular)$/, '');
-const certificate = (film: Film) => film.certificate || 'TBC';
-
-/** Friday to Sunday of this week; from today when the weekend has begun. */
-export function weekend(today: string): [string, string] {
-  const day = new Date(today + 'T00:00:00Z');
-  const weekday = (day.getUTCDay() + 6) % 7; // Monday is 0
-  const shift = (days: number) =>
-    new Date(day.getTime() + days * 86400000).toISOString().slice(0, 10);
-  return [shift(Math.max(4 - weekday, 0)), shift(6 - weekday)];
-}
-
-export function home(l: Listings, scope: Scope) {
-  const shows = upcoming(l, scope);
-  const [first, last] = weekend(scope.today);
-  const [films, cinemas, days, tonightFilms, weekendFilms] = [1, 2, 3, 4, 5].map(() => new Set<string>());
-  let [tonight, weekendShows] = [0, 0];
-  for (const show of shows) {
-    films.add(show.filmId);
-    cinemas.add(show.cinemaId);
-    days.add(show.date);
-    if (show.date === scope.today) {
-      tonight += 1;
-      tonightFilms.add(show.filmId);
-    }
-    if (show.date >= first && show.date <= last) {
-      weekendShows += 1;
-      weekendFilms.add(show.filmId);
-    }
-  }
-  const dates = [...days].sort();
-  const opening = soon(l, scope);
-  return {
-    films: films.size,
-    showings: shows.length,
-    cinemas: cinemas.size,
-    tonight,
-    tonightFilms: tonightFilms.size,
-    weekendShows,
-    weekendFilms: weekendFilms.size,
-    days: days.size,
-    from: dates[0] ?? null,
-    to: dates.at(-1) ?? null,
-    soon: opening.length,
-    next: opening[0] ?? null,
-    allCinemas: l.cinemas.filter((cinema) => cinema.stored).length,
-  };
-}
-
-export interface FilmRow {
-  id: string;
-  title: string;
-  certificate: string;
-  runtime: number | null;
-  release: string | null;
-  imdb: number | null;
-  metacritic: number | null;
-  cinemas: number;
-  showings: number;
-  next: string;
-  /** The day of its next showing. */
-  from: string;
-}
-
-export function films(l: Listings, scope: Scope, filter: FilmFilter = {}): FilmRow[] {
-  const found = new Map<Film, { cinemas: Set<string>; showings: number; next: string; from: string }>();
-  for (const show of upcoming(l, scope)) {
-    if (!show.film) continue;
-    let row = found.get(show.film);
-    if (!row) found.set(show.film, (row = { cinemas: new Set(), showings: 0, next: show.startsAt, from: show.date }));
-    row.cinemas.add(show.cinemaId);
-    row.showings += 1;
-  }
-  return [...found]
-    .filter(([film]) =>
-      (!filter.certificate || certificate(film) === filter.certificate) &&
-      (!filter.genre || film.genres.includes(filter.genre)) &&
-      (!filter.person || film.people.some((person) => person.name === filter.person)) &&
-      (!filter.distributor || film.distributor === filter.distributor))
-    .map(([film, row]): FilmRow => ({
-      id: film.id, title: film.title, certificate: film.certificate, runtime: film.runtime, release: film.release,
-      imdb: film.imdb, metacritic: film.metacritic, cinemas: row.cinemas.size, showings: row.showings, next: row.next, from: row.from,
-    }))
-    .sort(by((film) => lower(film.title)));
-}
 
 export interface Film {
   id: string;
@@ -285,82 +187,13 @@ export interface Film {
 
 export const film = (l: Listings, id: string): Film | null => l.films.get(id) ?? null;
 
-export interface CinemaRow {
-  id: string;
-  name: string;
-  city: string;
-  films: number;
-  showings: number;
-  next: string | null;
-}
-
-/** Every stored cinema, or only those showing one film. Ticks do not narrow this list. */
-export function cinemas(l: Listings, scope: Scope, filmId?: string): CinemaRow[] {
-  const found = new Map<string, { films: Set<string>; showings: number; next: string }>();
-  for (const show of upcoming(l, scope, false)) {
-    if (filmId && show.filmId !== filmId) continue;
-    let row = found.get(show.cinemaId);
-    if (!row) found.set(show.cinemaId, (row = { films: new Set(), showings: 0, next: show.startsAt }));
-    row.films.add(show.filmId);
-    row.showings += 1;
-  }
-  return l.cinemas
-    .filter((cinema) => cinema.stored && (!filmId || found.has(cinema.id)))
-    .map((cinema): CinemaRow => {
-      const row = found.get(cinema.id);
-      return {
-        id: cinema.id, name: cinema.name, city: cinema.address.city ?? '',
-        films: row?.films.size ?? 0, showings: row?.showings ?? 0, next: row?.next ?? null,
-      };
-    })
-    .sort(by((cinema) => lower(cinema.name)));
-}
-
-export interface SoonRow {
-  id: string;
-  title: string;
-  certificate: string;
-  release: string;
-  cinemas: number;
-}
-
-/** Films not yet released that the scoped cinemas have announced. */
-export function soon(l: Listings, scope: Scope): SoonRow[] {
-  const ticked = new Set(scope.cinemas);
-  const hidden = new Set(scope.hidden);
-  const found = new Map<Film, Set<string>>();
-  for (const [cinemaId, filmId] of l.availability) {
-    const film = l.films.get(filmId);
-    if (!film?.release || film.release <= scope.today) continue;
-    if ((ticked.size && !ticked.has(cinemaId)) || hidden.has(filmId)) continue;
-    if (scope.noEvents && l.events.has(filmId)) continue;
-    if (!found.has(film)) found.set(film, new Set());
-    found.get(film)!.add(cinemaId);
-  }
-  return [...found]
-    .map(([film, cinemas]): SoonRow => ({
-      id: film.id, title: film.title, certificate: film.certificate, release: film.release!, cinemas: cinemas.size,
-    }))
-    .sort(by((film) => film.release, (film) => lower(film.title)));
-}
-
-export interface DateRow {
-  date: string;
-  films: number;
-  showings: number;
-}
-
-export function dates(l: Listings, scope: Scope): DateRow[] {
-  const found = new Map<string, { films: Set<string>; showings: number }>();
-  for (const show of upcoming(l, scope)) {
-    let row = found.get(show.date);
-    if (!row) found.set(show.date, (row = { films: new Set(), showings: 0 }));
-    row.films.add(show.filmId);
-    row.showings += 1;
-  }
-  return [...found]
-    .map(([date, row]): DateRow => ({ date, films: row.films.size, showings: row.showings }))
-    .sort(by((row) => row.date));
+/** Friday to Sunday of this week; from today when the weekend has begun. */
+export function weekend(today: string): [string, string] {
+  const day = new Date(today + 'T00:00:00Z');
+  const weekday = (day.getUTCDay() + 6) % 7; // Monday is 0
+  const shift = (days: number) =>
+    new Date(day.getTime() + days * 86400000).toISOString().slice(0, 10);
+  return [shift(Math.max(4 - weekday, 0)), shift(6 - weekday)];
 }
 
 /** A screen's name without "Screen ", and its number when that is all the name is. */
@@ -394,72 +227,11 @@ const SHOWING_ORDERS: Record<string, (sign: number) => (a: Show, b: Show) => num
       : sign * (a.capacity - b.capacity),
 };
 
-export function showings(
-  l: Listings,
-  scope: Scope,
-  filter: ShowingFilter,
-  sort = 'date',
-  descending = false,
-  limit = 200,
-  offset = 0,
-): { rows: Showing[]; total: number } {
-  const text = filter.text ? lower(filter.text) : '';
-  const found = upcoming(l, scope).filter((show) => {
-    if (!show.film || !show.cinema) return false;
-    if (filter.from && show.date < filter.from) return false;
-    if (filter.to && show.date > filter.to) return false;
-    if (filter.film && show.filmId !== filter.film) return false;
-    if (filter.cinema && show.cinemaId !== filter.cinema) return false;
-    if (filter.screen && show.screenId !== filter.screen) return false;
-    if (filter.tag && !show.experiences.includes(filter.tag)) return false;
-    if (filter.seat && !show.seating.some((seat) => seatType(seat) === filter.seat)) return false;
-    if (text) {
-      show.text ??= lower([show.film.title, show.cinema.name, show.screen, show.time, ...show.experiences].join(' '));
-      if (!show.text.includes(text)) return false;
-    }
-    return true;
-  });
-  // Already in date order; sorting is stable, so any other order keeps it for ties.
-  if (sort !== 'date' || descending) found.sort((SHOWING_ORDERS[sort] ?? SHOWING_ORDERS.date)(descending ? -1 : 1));
-  return {
-    total: found.length,
-    rows: found.slice(offset, offset + limit).map(asShowing),
-  };
-}
-
 const asShowing = (show: Show): Showing => ({
   cinemaId: show.cinemaId, id: show.id, filmId: show.filmId, date: show.date, startsAt: show.startsAt,
   time: show.time, endsAt: show.filmEndsAt, title: show.film!.title, cinema: show.cinema!.name, screen: show.screen,
   capacity: show.capacity, experiences: show.experiences, soldOut: show.soldOut,
 });
-
-/** One choice in each of the finder's columns; a column left out means all. */
-export interface Pick {
-  day?: string;
-  film?: string;
-  cinema?: string;
-  /** A tag exactly as ODEON names it. */
-  format?: string;
-}
-
-/** For the finder: how many showings each day, film, cinema and tag would
- *  give, with the choices made in the other three columns applied. */
-export function counts(l: Listings, scope: Scope, pick: Pick): Record<keyof Pick, Map<string, number>> {
-  const found = { day: new Map<string, number>(), film: new Map<string, number>(), cinema: new Map<string, number>(), format: new Map<string, number>() };
-  const add = (map: Map<string, number>, key: string) => map.set(key, (map.get(key) ?? 0) + 1);
-  for (const show of upcoming(l, scope)) {
-    if (!show.film || !show.cinema) continue;
-    const day = !pick.day || show.date === pick.day;
-    const film = !pick.film || show.filmId === pick.film;
-    const cinema = !pick.cinema || show.cinemaId === pick.cinema;
-    const format = !pick.format || show.experiences.includes(pick.format);
-    if (film && cinema && format) add(found.day, show.date);
-    if (day && cinema && format) add(found.film, show.filmId);
-    if (day && film && format) add(found.cinema, show.cinemaId);
-    if (day && film && cinema) for (const tag of show.experiences) add(found.format, tag);
-  }
-  return found;
-}
 
 export interface Neighbour extends Showing {
   /** Minutes between one film ending and the other's advertised start. */
@@ -482,96 +254,6 @@ export function around(l: Listings, scope: Scope, cinemaId: string, id: string, 
     if (lead >= 0 && lead <= within) before.push({ ...asShowing(show), gap: lead });
   }
   return { before, after };
-}
-
-export interface TagRow {
-  tag: string;
-  showings: number;
-  films: number;
-  cinemas: number;
-}
-
-/** How many showings carry each format tag, or offer each seat type. */
-export function tags(l: Listings, scope: Scope, kind: 'experiences' | 'seating'): TagRow[] {
-  const found = new Map<string, { showings: number; films: Set<string>; cinemas: Set<string> }>();
-  for (const show of upcoming(l, scope)) {
-    const names = kind === 'seating' ? show.seating.map(seatType) : show.experiences;
-    for (const tag of new Set(names)) {
-      let row = found.get(tag);
-      if (!row) found.set(tag, (row = { showings: 0, films: new Set(), cinemas: new Set() }));
-      row.showings += 1;
-      row.films.add(show.filmId);
-      row.cinemas.add(show.cinemaId);
-    }
-  }
-  return [...found]
-    .map(([tag, row]): TagRow => ({ tag, showings: row.showings, films: row.films.size, cinemas: row.cinemas.size }))
-    .sort(by((row) => -row.showings, (row) => row.tag));
-}
-
-export interface FacetRow {
-  name: string;
-  /** For people: what they did on the film. */
-  role: string | null;
-  films: number;
-  showings: number;
-}
-
-const FACETS: Record<string, (film: Film) => [name: string, role: string | null][]> = {
-  certificate: (film) => [[certificate(film), null]],
-  distributor: (film) => [[film.distributor, null]],
-  genre: (film) => film.genres.map((genre) => [genre, null]),
-  person: (film) => film.people.map((person) => [person.name, person.roles[0] ?? null]),
-};
-
-/** The films now showing, grouped by something about the film. */
-export function facet(l: Listings, scope: Scope, kind: 'certificate' | 'distributor' | 'genre' | 'person'): FacetRow[] {
-  const shown = new Map<Film, number>();
-  for (const show of upcoming(l, scope)) if (show.film) shown.set(show.film, (shown.get(show.film) ?? 0) + 1);
-  const found = new Map<string, FacetRow>();
-  for (const [film, count] of shown) {
-    for (const [name, role] of FACETS[kind](film)) {
-      if (!name) continue;
-      let row = found.get(name);
-      if (!row) found.set(name, (row = { name, role: null, films: 0, showings: 0 }));
-      if (role !== null && (row.role === null || role < row.role)) row.role = role;
-      row.films += 1;
-      row.showings += count;
-    }
-  }
-  return [...found.values()].sort(by((row) => lower(row.name)));
-}
-
-export interface ScreenRow {
-  cinemaId: string;
-  screenId: string;
-  cinema: string;
-  screen: string;
-  capacity: number | null;
-  showings: number;
-  /** Every tag any showing on the screen carries. */
-  tags: string[];
-}
-
-/** Every screen with a showing to come, biggest first. */
-export function screens(l: Listings, scope: Scope): ScreenRow[] {
-  const found = new Map<string, ScreenRow>();
-  for (const show of upcoming(l, scope)) {
-    if (!show.cinema) continue;
-    const key = `${show.cinemaId}/${show.screenId}`;
-    let row = found.get(key);
-    if (!row) {
-      row = {
-        cinemaId: show.cinemaId, screenId: show.screenId, cinema: show.cinema.name, screen: show.screen,
-        capacity: show.capacity, showings: 0, tags: [],
-      };
-      found.set(key, row);
-    }
-    if (show.screen < row.screen) row.screen = show.screen;
-    row.showings += 1;
-    for (const tag of show.experiences) if (!row.tags.includes(tag)) row.tags.push(tag);
-  }
-  return [...found.values()].sort(by((row) => -(row.capacity ?? -1), (row) => lower(row.cinema)));
 }
 
 export interface ShowingDetail extends Showing {
@@ -604,3 +286,121 @@ export function titles(l: Listings, ids: string[]): { id: string; title: string 
     })
     .sort(by((film) => lower(film.title)));
 }
+
+// ---- The finder ------------------------------------------------------------
+
+/** The columns a visitor can choose to show: what a showing can be chosen by. */
+export const FACETS = [
+  'day', 'film', 'cinema', 'location', 'picture', 'language', 'access', 'event', 'seat',
+  'screen', 'cert', 'genre', 'person', 'distributor', 'release',
+] as const;
+export type Facet = (typeof FACETS)[number];
+/** One choice per column; a column left out means all. */
+export type Picks = Partial<Record<Facet, string>>;
+
+// ODEON prices one seat type in tiers ("Recliner Saver"); the type is what matters.
+const seatType = (seat: string) => seat.replace(/ (Saver|Popular)$/, '');
+const certificate = (film: Film) => film.certificate || 'TBC';
+const tagged = (kind: TagKind) => (show: Show) => show.experiences.filter((tag) => tagKind(tag) === kind);
+
+/** Columns whose value is the film's, whichever showing of it: counted per film. */
+const FILM_FACETS = new Set<Facet>(['film', 'cert', 'genre', 'person', 'distributor', 'release']);
+
+/** What one showing offers a column. A showing can offer several (its tags, the film's genres) or none. */
+function keyer(facet: Facet, today: string): (show: Show) => string[] {
+  const [first, last] = weekend(today);
+  switch (facet) {
+    case 'day': return (show) => (show.date >= first && show.date <= last ? [show.date, 'weekend'] : [show.date]);
+    case 'film': return (show) => [show.filmId];
+    case 'cinema': return (show) => [show.cinemaId];
+    case 'location': return (show) => [place({ id: show.cinemaId, name: show.cinema?.name ?? '', city: show.cinema?.address.city ?? '' })];
+    case 'picture': return tagged('Picture');
+    case 'language': return tagged('Language');
+    case 'access': return tagged('Accessibility');
+    case 'event': return tagged('Events');
+    case 'seat': return (show) => [...new Set(show.seating.map(seatType))];
+    case 'screen': return (show) => [`${show.cinemaId}/${show.screenId}`];
+    case 'cert': return (show) => (show.film ? [certificate(show.film)] : []);
+    case 'genre': return (show) => show.film?.genres ?? [];
+    case 'person': return (show) => [...new Set(show.film?.people.map((person) => person.name))];
+    case 'distributor': return (show) => (show.film?.distributor ? [show.film.distributor.replace(/ IR$/, '')] : []);
+    case 'release': return (show) => [show.film?.release && show.film.release > today ? 'soon' : 'out'];
+  }
+}
+function keysOf(l: Listings, facet: Facet, today: string): string[][] {
+  l.keys ??= new Map();
+  const name = `${facet}/${today}`;
+  if (!l.keys.has(name)) l.keys.set(name, l.shows.map(keyer(facet, today)));
+  return l.keys.get(name)!;
+}
+
+/** For the finder: how many showings each choice in each column would give, with
+ *  the choices in the other columns applied; and the showings every choice allows,
+ *  in start order. A search narrows the showings, not the counts. */
+export function find(l: Listings, scope: Scope, facets: Facet[], picks: Picks, text = ''): { counts: Map<string, number>[]; shows: Show[] } {
+  const keys = facets.map((facet) => keysOf(l, facet, scope.today));
+  const wanted = facets.map((facet) => picks[facet]);
+  const counts = facets.map(() => new Map<string, number>());
+  // A column about the film (its people, say) is counted per film and spread after:
+  // one tally a showing instead of one for each of its film's many people.
+  const perFilm = facets.map((facet) => (FILM_FACETS.has(facet) ? new Map<string, { n: number; index: number }>() : null));
+  const add = (column: number, show: Show) => {
+    const films = perFilm[column];
+    if (films) {
+      const seen = films.get(show.filmId);
+      if (seen) seen.n += 1;
+      else films.set(show.filmId, { n: 1, index: show.index });
+      return;
+    }
+    for (const key of keys[column][show.index]) counts[column].set(key, (counts[column].get(key) ?? 0) + 1);
+  };
+  const needle = text.toLowerCase();
+  const shows: Show[] = [];
+  for (const show of upcoming(l, scope)) {
+    if (!show.film || !show.cinema) continue;
+    // A showing that fails one column's choice still counts towards that column.
+    let failed = -1;
+    let failures = 0;
+    for (let column = 0; column < facets.length && failures < 2; column += 1) {
+      if (wanted[column] !== undefined && !keys[column][show.index].includes(wanted[column]!)) {
+        failures += 1;
+        failed = column;
+      }
+    }
+    if (failures > 1) continue;
+    if (failures === 1) { add(failed, show); continue; }
+    for (let column = 0; column < facets.length; column += 1) add(column, show);
+    if (needle) {
+      show.text ??= lower([show.film.title, show.cinema.name, show.screen, show.time, ...show.experiences].join(' '));
+      if (!show.text.includes(needle)) continue;
+    }
+    shows.push(show);
+  }
+  perFilm.forEach((films, column) => {
+    for (const { n, index } of films?.values() ?? []) {
+      for (const key of keys[column][index]) counts[column].set(key, (counts[column].get(key) ?? 0) + n);
+    }
+  });
+  return { counts, shows };
+}
+
+export const SORTS = Object.keys(SHOWING_ORDERS);
+/** Showings from find(), in another order and only the first `limit`. */
+export function arrange(shows: Show[], sort = 'date', descending = false, limit = Infinity): { rows: Showing[]; total: number } {
+  const sorted = sort === 'date' && !descending ? shows : [...shows].sort((SHOWING_ORDERS[sort] ?? SHOWING_ORDERS.date)(descending ? -1 : 1));
+  return { total: shows.length, rows: sorted.slice(0, limit).map(asShowing) };
+}
+
+/** A screen's cinema, name and size, for its row in the Screen column. */
+export function screenOf(l: Listings, key: string): { cinema: string; screen: string; capacity: number | null } | null {
+  if (!screenMaps.has(l)) {
+    const found = new Map<string, { cinema: string; screen: string; capacity: number | null }>();
+    for (const show of l.shows) {
+      const name = `${show.cinemaId}/${show.screenId}`;
+      if (show.cinema && !found.has(name)) found.set(name, { cinema: show.cinema.name, screen: show.screen, capacity: show.capacity });
+    }
+    screenMaps.set(l, found);
+  }
+  return screenMaps.get(l)!.get(key) ?? null;
+}
+const screenMaps = new WeakMap<Listings, Map<string, { cinema: string; screen: string; capacity: number | null }>>();

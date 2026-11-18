@@ -21,8 +21,9 @@
   others' choices applied). What is shown at all is in the query string
   (`?cinemas=london&hidden=…&show=events`; Greater London ticked whole is written `london`),
   and the view in the hash (`#/?cols=day,film,screen&film=…&order=film:rating&col=2&row=5`),
-  so a bookmark is a saved view. Nothing is stored in the browser. Older addresses
-  (`#/browse|films`, `#/find?…`) open the default view. On a phone one column shows at a time.
+  so a bookmark is a saved view. Nothing is stored in the browser. The default view is Cinema then
+  Film, over every cinema. Older addresses (`#/browse|films`, `#/find?…`) open the default view
+  (`#/find` with the finder's first four columns). On a phone one column shows at a time.
 - This repository is public. Never commit credentials; the tailnet identity and the OMDb key are
   GitHub Actions secrets.
 - `site/e2e/` holds Playwright tests that drive the built site by keys, clicks and scrolling

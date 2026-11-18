@@ -31,7 +31,7 @@ export const needsEveryCinema = (ticks: Set<string>) => !ticks.size || [...ticks
 /** Showtimes are drawn this many at a time; more follow as the reader nears the end. */
 export const PAGE = 100;
 
-export const DEFAULT_COLUMNS: Facet[] = ['day', 'film', 'cinema', 'picture'];
+export const DEFAULT_COLUMNS: Facet[] = ['cinema', 'film'];
 /** How a column of choices is ordered: its own way, by how many showings, or (films) by rating. */
 export type Order = 'name' | 'count' | 'rating';
 
@@ -58,7 +58,9 @@ export function readView(hash: string): View {
   const [route, query = ''] = (hash.replace(/^#\/?/, '').split('|').pop() ?? '').split('?');
   const params = new URLSearchParams(route === '' || route === 'find' ? query : '');
   const known = (name: string): name is Facet => (FACETS as readonly string[]).includes(name);
-  const columns = params.has('cols') ? [...new Set(params.get('cols')!.split(',').filter(known))] : [...DEFAULT_COLUMNS];
+  // The finder's first addresses had no `cols`: they meant its four columns of then.
+  const unlisted: Facet[] = route === 'find' ? ['day', 'film', 'cinema', 'picture'] : DEFAULT_COLUMNS;
+  const columns = params.has('cols') ? [...new Set(params.get('cols')!.split(',').filter(known))] : [...unlisted];
   const picks: Picks = {};
   for (const column of columns) if (params.get(column)) picks[column] = params.get(column)!;
   if (params.get('format') && columns.includes('picture') && !picks.picture) picks.picture = params.get('format')!; // the finder's first name for it

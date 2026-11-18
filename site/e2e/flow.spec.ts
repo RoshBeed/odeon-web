@@ -28,13 +28,13 @@ async function visit(page: Page, address: string) {
 
 test('the site opens on the finder, with the default columns and a quick start', async ({ page }) => {
   await visit(page, '/');
-  await expect(titles(page)).toHaveText(['Day', 'Film', 'Cinema', 'Picture', 'Showtimes', /./]);
+  await expect(titles(page)).toHaveText(['Cinema', 'Film', 'Showtimes', /./]);
   await expect(total(page)).toHaveText('254'); // event cinema left out
   await expect(choices(page, 'Film')).toHaveText([/^All/, /^Dune/, /^Paddington/]);
 });
 
 test('keys choose in each column, each counts what the others leave, and the address keeps it', async ({ page }) => {
-  await visit(page, '/');
+  await visit(page, '/#/?cols=day,film,cinema,picture');
   await page.keyboard.press('ArrowRight'); // to Film
   await page.keyboard.press('ArrowDown'); // Dune
   await expect(total(page)).toHaveText('3');
@@ -43,7 +43,7 @@ test('keys choose in each column, each counts what the others leave, and the add
   await page.keyboard.press('ArrowRight'); // to Picture
   await page.keyboard.press('ArrowDown'); // IMAX
   await expect(total(page)).toHaveText('1');
-  await expect(page).toHaveURL(/#\/\?film=F1&picture=IMAX&col=4$/);
+  await expect(page).toHaveURL(/#\/\?cols=day,film,cinema,picture&film=F1&picture=IMAX&col=4$/);
   await page.reload();
   await expect(total(page)).toHaveText('1');
   await expect(column(page, 'Picture')).toHaveClass(/focused/);
@@ -52,7 +52,7 @@ test('keys choose in each column, each counts what the others leave, and the add
 });
 
 test('the highlighted showtime shows its details and its double bill, which can be followed', async ({ page }) => {
-  await visit(page, '/#/?film=F1&col=5');
+  await visit(page, '/#/?film=F1&col=3');
   await page.keyboard.press('ArrowDown');
   await page.keyboard.press('ArrowUp');
   const details = page.locator('.column.details');
@@ -65,7 +65,7 @@ test('the highlighted showtime shows its details and its double bill, which can 
 });
 
 test('the columns panel adds, moves and removes columns, and a bookmark keeps the view', async ({ page }) => {
-  await visit(page, '/');
+  await visit(page, '/#/?cols=day,film,cinema,picture');
   await page.keyboard.press('o');
   const panel = page.locator('dialog.panel');
   await panel.getByLabel(/^\s*Screen each/).check();
@@ -83,7 +83,7 @@ test('the columns panel adds, moves and removes columns, and a bookmark keeps th
 });
 
 test('[ and ] move the column in hand, and x hides it', async ({ page }) => {
-  await visit(page, '/#/?col=2');
+  await visit(page, '/#/?cols=day,film,cinema,picture&col=2');
   await page.keyboard.press(']');
   await expect(titles(page)).toHaveText(['Day', 'Cinema', 'Film', 'Picture', 'Showtimes', /./]);
   await expect(column(page, 'Film')).toHaveClass(/focused/);
@@ -112,7 +112,7 @@ test('/ searches the column in hand, and s orders it', async ({ page }) => {
 });
 
 test('a long list of showtimes draws more as the reader scrolls and as the highlight moves', async ({ page }) => {
-  await visit(page, '/#/?col=5');
+  await visit(page, '/#/?col=3');
   await expect(showtimes(page)).toHaveCount(100);
   await page.locator('.column.showtimes').evaluate((element) => element.scrollTo(0, element.scrollHeight));
   await expect(showtimes(page)).toHaveCount(200);
@@ -123,7 +123,7 @@ test('a long list of showtimes draws more as the reader scrolls and as the highl
 
 test('the window holds the columns clear of the footer, and a highlighted row clear of its heading', async ({ page }) => {
   await page.setViewportSize({ width: 1024, height: 700 });
-  await visit(page, '/#/?col=5');
+  await visit(page, '/#/?col=3');
   for (const [key, times] of [['ArrowDown', 40], ['ArrowUp', 30]] as const) for (let press = 0; press < times; press += 1) await page.keyboard.press(key);
   const box = async (selector: string) => (await page.locator(selector).first().boundingBox())!;
   const [strip, footer, bar, row] = [await box('.columns'), await box('footer'), await box('.showtimes .bar'), await box('.showtimes .selected')];
@@ -167,18 +167,17 @@ test('addresses from before open the finder with what they chose', async ({ page
   await visit(page, '/#/find?film=F1&format=IMAX&col=4');
   await expect(total(page)).toHaveText('1');
   await visit(page, '/?x=1#/browse?row=2|films?row=5');
-  await expect(titles(page)).toHaveText(['Day', 'Film', 'Cinema', 'Picture', 'Showtimes', /./]);
+  await expect(titles(page)).toHaveText(['Cinema', 'Film', 'Showtimes', /./]);
 });
 
 test('a phone shows one column at a time, and a choice moves on to the next', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 800 });
   await visit(page, '/');
-  await expect(page.locator('.column:visible .bar h2')).toHaveText('Day');
-  await page.locator('.column.day li', { hasText: 'All' }).first().click(); // All moves on too
+  await expect(page.locator('.column:visible .bar h2')).toHaveText('Cinema');
+  await page.locator('.column.cinema li', { hasText: 'All' }).first().click(); // All moves on too
   await expect(page.locator('.column:visible .bar h2')).toHaveText('Film');
   await page.locator('.column.film li', { hasText: 'Dune' }).click();
-  await expect(page.locator('.column:visible .bar h2')).toHaveText('Cinema');
-  await page.locator('.steps button', { hasText: 'Showtimes' }).click();
+  await expect(page.locator('.column:visible')).toHaveClass(/showtimes/);
   await showtimes(page).first().click();
   await expect(page.locator('.column:visible')).toHaveClass(/details/);
   await expect(page.locator('.column.details .actions a')).toHaveText('Book on odeon.co.uk');

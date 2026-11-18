@@ -38,7 +38,7 @@ can be added to your calendar.
 
 Concerts, theatre and other Event Cinema screenings, which a Limitless
 membership does not cover, are left out unless you switch them on in Settings.
-The footer says how fresh the listings are; ODEON publishes each week's full
+On a computer the footer says how fresh the listings are; ODEON publishes each week's full
 schedule on Tuesday, and days after that hold advance bookings only.
 
 ![Settings, a drawer at the side: every cinema, London only or chosen cinemas; the columns in order with buttons to move and remove them, and buttons to add others](docs/screenshots/desktop-settings.png)

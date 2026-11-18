@@ -172,9 +172,12 @@ test('event cinema and single cinemas are chosen in the settings', async ({ page
 });
 
 test('a phone shows one column at a time, and a choice moves on to the next', async ({ page }) => {
-  await page.setViewportSize({ width: 390, height: 800 });
+  await page.setViewportSize({ width: 375, height: 812 }); // an iPhone 13 mini
   await visit(page, '/');
   await expect(page.locator('.column:visible .bar h2')).toHaveText('Cinema');
+  // The header is one line, and there is no footer.
+  expect((await page.locator('header').boundingBox())!.height).toBeLessThan(50);
+  await expect(page.locator('footer')).toBeHidden();
   await page.locator('.column.cinema li', { hasText: 'All' }).first().click(); // All moves on too
   await expect(page.locator('.column:visible .bar h2')).toHaveText('Film');
   await page.locator('.column.film li', { hasText: 'Dune' }).click();

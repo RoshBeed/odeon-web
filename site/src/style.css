@@ -117,9 +117,11 @@ footer kbd { color: var(--accent); font: inherit; }
 @media (max-width: 640px) {
   :root { font-size: 15px; }
   #app { padding: 0 10px; }
-  header { flex-wrap: wrap; gap: 8px 12px; }
-  footer { margin: 0 -10px; }
-  footer .keys { display: none; }
+  /* One line at the top, and none at the foot: the screen is for the listings. */
+  header { gap: 10px; padding: 8px 0; }
+  header h1 span { display: none; }
+  header .open-panel { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  footer { display: none; }
   .steps { display: flex; gap: 6px; overflow-x: auto; padding: 8px 0; border-bottom: 1px solid var(--line); }
   .steps button { flex: none; padding: 6px 10px; }
   .steps button.here { border-color: var(--accent); color: var(--accent); }

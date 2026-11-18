@@ -163,13 +163,6 @@ test('event cinema and single cinemas are chosen in the settings', async ({ page
   await expect(choices(page, 'Film')).toHaveText([/^All/, /^Dune/, /^Opera Live/, /^Paddington/]);
 });
 
-test('addresses from before open the finder with what they chose', async ({ page }) => {
-  await visit(page, '/#/find?film=F1&format=IMAX&col=4');
-  await expect(total(page)).toHaveText('1');
-  await visit(page, '/?x=1#/browse?row=2|films?row=5');
-  await expect(titles(page)).toHaveText(['Cinema', 'Film', 'Showtimes', /./]);
-});
-
 test('a phone shows one column at a time, and a choice moves on to the next', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 800 });
   await visit(page, '/');

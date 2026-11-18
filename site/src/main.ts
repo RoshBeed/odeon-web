@@ -144,7 +144,8 @@ const KINDS: Record<q.Facet, Kind> = {
     label: (key) => {
       const screen = q.screenOf(db, key);
       if (!screen) return [key, ''];
-      return [`${shortCinema(screen.cinema)} · ${screen.screen.replace(/^Screen /, '#')}`, screen.capacity ? `${screen.capacity} seats` : ''];
+      // The screen first, so that a narrow column cuts the cinema's name, not the screen's.
+      return [`${screen.screen.replace(/^Screen /, '#')} ${shortCinema(screen.cinema)}`, screen.capacity ? `${screen.capacity} seats` : ''];
     },
     natural: (values) => [...values].sort((a, b) => (q.screenOf(db, b)?.capacity ?? -1) - (q.screenOf(db, a)?.capacity ?? -1)),
   },

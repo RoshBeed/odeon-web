@@ -74,7 +74,7 @@ test('the columns panel adds, moves and removes columns, and a bookmark keeps th
   await panel.getByLabel(/^\s*Picture IMAX/).uncheck();
   await panel.getByRole('button', { name: 'Close' }).click();
   await expect(titles(page)).toHaveText(['Day', 'Film', 'Screen', 'Cinema', 'Showtimes', /./]);
-  await expect(choices(page, 'Screen').nth(1)).toContainText('West End · #1300 seats');
+  await expect(choices(page, 'Screen').nth(1)).toContainText('#1 West End300 seats');
   const bookmark = page.url();
   expect(bookmark).toMatch(/#\/\?cols=day,film,screen,cinema$/);
   await page.goto('about:blank');

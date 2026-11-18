@@ -2,7 +2,7 @@ import { expect, test } from 'vitest';
 import { ics } from './calendar';
 import { needsEveryCinema, readChoice, readPage, writeChoices, writePage } from './choices';
 import type { ShowingDetail } from './queries';
-import { certificateAge, formats, place, tagKind, tagLabel } from './tags';
+import { certificateAge, formats, LONDON, place, tagKind, tagLabel } from './tags';
 
 test('tags are grouped and renamed for people', () => {
   expect(['IMAX 3D_Web', 'Hindi (Audio)', 'English (Sub)', 'Audio Described', '£5 Web', 'Kids', 'Recliner'].map(tagKind)).toEqual([
@@ -81,4 +81,13 @@ test('certificates sort by age, with unrated films last', () => {
   const sorted = ['18', 'TBC', 'PG', '12A', 'U', '15', '', 'PG Ire', '15A', 'G']
     .sort((a, b) => (certificateAge(a) ?? 99) - (certificateAge(b) ?? 99));
   expect(sorted).toEqual(['U', 'G', 'PG', 'PG Ire', '12A', '15', '15A', '18', 'TBC', '']);
+});
+
+test('Greater London ticked whole is written as one word, and read back as its cinemas', () => {
+  const ticks = readChoice('?cinemas=london,001', 'cinemas');
+  expect(ticks.size).toBe(LONDON.size + 1);
+  expect(writeChoices({ cinemas: ticks })).toBe('?cinemas=london,001');
+  ticks.delete('155'); // one London cinema unticked: each is listed again
+  expect(writeChoices({ cinemas: ticks })).not.toContain('london');
+  expect(readChoice('?hidden=london', 'hidden')).toEqual(new Set(['london']));
 });

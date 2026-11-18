@@ -228,6 +228,21 @@ function welcomeView(): View {
 /** Whether the ticked cinemas are Greater London's, no more and no fewer. */
 const londonOnly = () => ticks.size === LONDON.size && [...LONDON].every((id) => ticks.has(id));
 
+/** Tick or untick exactly Greater London's cinemas, then draw the page again; render() fetches what it needs. */
+function flipLondon() {
+  const on = !londonOnly();
+  ticks.clear();
+  toggle(ticks, on ? [...LONDON] : [], true);
+  render();
+}
+/** The London only tick in the header of every page. `before` saves what the page has not yet put in the address. */
+function londonBox(before?: () => void): HTMLElement {
+  const box = h('input', { type: 'checkbox', 'aria-keyshortcuts': 'l' }) as HTMLInputElement;
+  box.checked = londonOnly();
+  box.onchange = () => { before?.(); flipLondon(); };
+  return h('label', { class: 'area' }, box, ' London only');
+}
+
 /** Everything there is to browse or choose, each in one place. */
 function menuView(): View {
   const rows = (): Row[] => {
@@ -239,11 +254,6 @@ function menuView(): View {
       // The finder needs room for its columns side by side.
       ...(narrow.matches ? [] : [{ cells: ['Find showtimes', '', 'choose a day, a film, a cinema and a format together'], open: 'find' }]),
       { cells: ['Films', count(home.films, 'film'), count(home.showings, 'showing')], open: 'films' },
-      // One tick for the most common choice: exactly Greater London's cinemas.
-      {
-        cells: ['London only', count(LONDON.size, 'cinema'), londonOnly() ? 'only Greater London is shown' : 'show only Greater London'],
-        tick: { state: londonOnly() ? 'all' : 'none', toggle: () => { const on = !londonOnly(); ticks.clear(); toggle(ticks, on ? [...LONDON] : [], true); } },
-      },
       { cells: ['Cinemas', count(home.allCinemas, 'cinema'), ticks.size ? `${count(ticks.size, 'cinema')} ticked` : 'all'], open: 'cinemas' },
       { cells: ['Location', count(places.size, 'location'), 'browse or tick cinema groups'], open: 'locations' },
       { cells: ['Today', count(home.tonight, 'showing'), count(home.tonightFilms, 'film')], open: 'today' },
@@ -896,9 +906,9 @@ function showFinder(query: string): (event: KeyboardEvent) => void {
   document.title = 'Find showtimes · ODEON';
   app.classList.add('side');
   app.replaceChildren(
-    h('header', {}, h('h1', {}, link('ODEON', '#/'), h('span', {}, ' — Find showtimes'))),
+    h('header', {}, h('h1', {}, link('ODEON', '#/'), h('span', {}, ' — Find showtimes')), londonBox(() => { clearTimeout(noting); write(); })),
     h('div', { class: 'columns finder' }, ...columns, detail),
-    footer(['←→ column', '↑↓ choose', 'Esc all', 'Enter open', 'b book', 'c calendar']),
+    footer(['←→ column', '↑↓ choose', 'Esc all', 'Enter open', 'b book', 'c calendar', 'l London only']),
   );
 
   const names = new Map(allCinemas().map((cinema) => [cinema.id, cinema.name]));
@@ -1018,6 +1028,10 @@ function showFinder(query: string): (event: KeyboardEvent) => void {
       window.open(shown.book, '_blank', 'noopener');
     } else if (event.key === 'c' && shown?.calendar) {
       shown.calendar();
+    } else if (event.key === 'l') {
+      clearTimeout(noting);
+      write();
+      flipLondon();
     } else {
       return;
     }
@@ -1069,7 +1083,8 @@ function render() {
     h('header', {},
       // Columns show where you are; pages need a way back and a way to the menu.
       ...(key && !side ? [button('← Back', back), ...(key === 'browse' ? [] : [inner('Menu', 'browse')])] : []),
-      h('h1', {}, link('ODEON', '#/'), h('span', {}, ' — ' + view.title))),
+      h('h1', {}, link('ODEON', '#/'), h('span', {}, ' — ' + view.title)),
+      londonBox(noteNow)),
     ...(side
       ? [h('div', { class: 'columns' },
           ...trail.map(passed),
@@ -1188,6 +1203,7 @@ function paint() {
     ...(filmy ? ['h hide film', 't trailer'] : []),
     ...(booking ? ['b book', 'c calendar'] : []),
     narrow.matches ? '' : `v ${side ? 'pages' : 'columns'}`,
+    'l London only',
   ].filter(Boolean)));
   app.querySelector('.pager')!.replaceChildren(
     h('span', { class: 'dim' }, columns() ? table.total.toLocaleString('en-GB') : count(table.total, 'row')));
@@ -1263,7 +1279,7 @@ document.addEventListener('keydown', (event) => {
     PageDown: () => move(20), PageUp: () => move(-20),
     Home: () => move(-Infinity), End: () => move(Infinity),
     Enter: open, ArrowRight: open, Escape: back, ArrowLeft: back, Backspace: back,
-    ' ': tick, s: nextSort, v: switchLayout,
+    ' ': tick, s: nextSort, v: switchLayout, l: () => { noteNow(); flipLondon(); },
     t: () => {
       const play = ['.focused', '.preview', '#app'].map((where) => document.querySelector<HTMLElement>(`${where} .trailer button`)).find(Boolean);
       play?.parentElement!.scrollIntoView({ block: 'nearest' }); // it may be further down its column

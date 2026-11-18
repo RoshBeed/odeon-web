@@ -21,7 +21,7 @@ const cards = (page: Page, title: string) => column(page, title).locator('.cards
 const focused = (page: Page) => page.locator('.column.focused');
 const menu = async (page: Page, entry: string) => {
   await page.goto('/#/browse');
-  await cards(page, 'Browse').filter({ hasText: entry }).first().click();
+  await cards(page, 'Browse').filter({ hasText: new RegExp(`^${entry}`) }).first().click();
   await page.keyboard.press('ArrowRight');
   await expect(focused(page).locator('h2')).toHaveText(entry);
 };
@@ -101,6 +101,26 @@ test('ticked cinemas go in the address and narrow every list', async ({ page }) 
   await page.goto('/?cinemas=155#/browse');
   await expect(cards(page, 'Browse').filter({ hasText: /^Films/ })).toContainText('2 films · 2 showings');
   expect(fetched).toEqual(['listings.json.gz', 'london.json.gz']); // only London's once only London is ticked
+});
+
+test('London only ticks Greater London alone, and unticking it brings back every cinema', async ({ page }) => {
+  await page.goto('/#/browse');
+  const london = () => cards(page, 'Browse').filter({ hasText: 'London only' });
+  await london().click();
+  await page.keyboard.press(' ');
+  await expect(london().locator('.tick')).toHaveText('[x]');
+  const bookmark = page.url();
+  expect(bookmark).toMatch(/\?cinemas=[0-9,]+#/);
+  await page.goto('about:blank'); // a fresh visit, as from the bookmark
+  fetched.length = 0;
+  await page.goto(bookmark);
+  await expect(london().locator('.tick')).toHaveText('[x]');
+  expect(fetched).toEqual(['london.json.gz']);
+  await london().click();
+  await page.keyboard.press(' ');
+  await expect(london().locator('.tick')).toHaveText('[ ]');
+  await expect(cards(page, 'Browse').filter({ hasText: /^Cinemas/ })).toContainText('all');
+  expect(fetched).toEqual(['london.json.gz', 'listings.json.gz']); // every cinema, fetched once needed
 });
 
 test('event cinema appears once it is switched on in the settings', async ({ page }) => {

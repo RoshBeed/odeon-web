@@ -268,11 +268,11 @@ function render() {
   app.replaceChildren(
     h('header', {},
       h('h1', {}, h('a', { href: '#/' }, 'ODEON'), h('span', {}, ' showtimes')),
-      button('Columns & settings', openPanel, { class: 'open-panel', 'aria-keyshortcuts': 'o' }),
-      checkbox(' London only', londonOnly(), () => flipLondon())),
+      // Where the finder looks, at a glance, and the way to change it.
+      button(`Settings · ${where()}`, openPanel, { class: 'open-panel', 'aria-keyshortcuts': 'o', 'aria-label': `Settings: ${where()}` })),
     steps,
     h('div', { class: 'columns finder' }, ...panes),
-    footer(['←→ column', '↑↓ choose', 'Esc all', '/ search', 's order', '[ ] move column', 'x hide column', 'o columns',
+    footer(['←→ column', '↑↓ choose', 'Esc all', '/ search', 's order', '[ ] move column', 'x remove column', 'o settings',
       'h hide film', 't trailer', 'b book', 'c calendar', 'l London only']),
   );
 
@@ -501,6 +501,7 @@ function hideFilm(id: string) {
   page?.draw();
 }
 function flipLondon() {
+  choosing = false;
   const on = !londonOnly();
   ticks.clear();
   toggle(ticks, on ? [...LONDON] : [], true);
@@ -524,94 +525,153 @@ function footer(hints: string[]): HTMLElement {
       ...(old ? [h('span', { class: 'stale' }, ' · more than a week old')] : [])));
 }
 
-// ---- Columns & settings ----------------------------------------------------------
+// ---- Settings: a drawer at the side, so the finder shows each change as it is made ----
 
-const panel = h('dialog', { class: 'panel', 'aria-label': 'Columns and settings' }) as HTMLDialogElement;
+const panel = h('dialog', { class: 'panel', 'aria-label': 'Settings' }) as HTMLDialogElement;
 document.body.append(panel);
 panel.addEventListener('click', (event) => { if (event.target === panel) panel.close(); }); // a click outside it
+/** Whether the visitor asked to pick cinemas one by one, before ticking any. */
+let choosing = false;
+/** What is typed into the cinema search, kept while the drawer is redrawn. */
+let cinemaSearch = '';
+
+/** Where the finder looks, in a few words: for the header and the drawer. */
+function where(): string {
+  if (!ticks.size) return 'Every cinema';
+  if (londonOnly()) return 'London only';
+  return ticks.size === 1 ? shortCinema(names.get([...ticks][0]) ?? '1 cinema') : count(ticks.size, 'cinema');
+}
 
 function openPanel() {
   noteNow();
+  choosing = false;
   fillPanel();
   panel.showModal();
 }
 
+/** Apply a change, draw the finder behind, and redraw the drawer where it was, with the same control in hand. */
+function changed(apply: () => void) {
+  apply();
+  rebuild();
+  fillPanel();
+}
+
 function fillPanel() {
   const scrolled = panel.scrollTop;
-  const shown = view.columns;
-  const move = (facet: q.Facet, step: number) => {
-    const at = shown.indexOf(facet);
-    const to = at + step;
-    if (to < 0 || to >= shown.length) return;
-    [shown[at], shown[to]] = [shown[to], shown[at]];
-    rebuild();
-    fillPanel();
+  const held = (document.activeElement as HTMLElement | null)?.dataset.key;
+  /** Name a control, so that it has the focus again after the drawer is redrawn. A tick box is named on its box. */
+  const keyed = <T extends HTMLElement>(element: T, key: string): T => {
+    (element.querySelector('input') ?? element).dataset.key = key;
+    return element;
   };
-  const columnRows = [...shown, ...q.FACETS.filter((facet) => !shown.includes(facet))].map((facet) => {
-    const on = shown.includes(facet);
-    return h('li', {},
-      checkbox(h('span', {}, h('strong', {}, ` ${KINDS[facet].title}`), h('span', { class: 'dim' }, ` ${KINDS[facet].about}`)), on, (now) => {
-        if (now) shown.push(facet);
-        else { shown.splice(shown.indexOf(facet), 1); delete view.picks[facet]; }
-        view.focus = 0;
-        rebuild();
-        fillPanel();
-      }),
-      ...(on ? [
-        button('←', () => move(facet, -1), { 'aria-label': `Move ${KINDS[facet].title} left` }),
-        button('→', () => move(facet, 1), { 'aria-label': `Move ${KINDS[facet].title} right` }),
-      ] : []));
+  const shown = view.columns;
+
+  // Where: every cinema, Greater London, or cinemas chosen one by one.
+  const mode = !ticks.size && !choosing ? 'all' : londonOnly() && !choosing ? 'london' : 'some';
+  const option = (value: string, label: string, note: string, choose: () => void) => {
+    const input = keyed(h('input', { type: 'radio', name: 'where', value }) as HTMLInputElement, `where-${value}`);
+    input.checked = mode === value;
+    input.onchange = () => changed(choose);
+    return h('label', { class: `option${mode === value ? ' on' : ''}` }, input, h('strong', {}, label), h('span', { class: 'dim' }, note));
+  };
+  const places = new Map<string, { id: string; name: string }[]>();
+  for (const cinema of db.cinemas.filter((item) => item.stored)) {
+    const town = place({ id: cinema.id, name: cinema.name, city: cinema.address.city ?? '' });
+    places.set(town, [...(places.get(town) ?? []), cinema]);
+  }
+  const cinemaList = h('ul', { class: 'choices cinemas' });
+  const drawCinemas = () => {
+    const needle = cinemaSearch.toLowerCase();
+    cinemaList.replaceChildren(...[...places].sort(([a], [b]) => a.localeCompare(b)).flatMap(([town, cinemas]) => {
+      const match = (name: string) => !needle || name.toLowerCase().includes(needle) || town.toLowerCase().includes(needle);
+      const listed = cinemas.filter((cinema) => match(cinema.name)).sort((a, b) => a.name.localeCompare(b.name));
+      if (!listed.length) return [];
+      const ids = cinemas.map((cinema) => cinema.id);
+      const ticked = ids.filter((id) => ticks.has(id)).length;
+      const single = cinemas.length === 1 && shortCinema(cinemas[0].name) === town;
+      const box = (label: string, on: boolean, list: string[], mixed = false, key = list.join()) =>
+        keyed(checkbox(label, on, (now) => changed(() => toggle(ticks, list, now)), mixed), `cinema-${key}`);
+      return [h('li', {},
+        box(` ${town}`, ticked === ids.length, ids, ticked > 0 && ticked < ids.length, town),
+        ...(single ? [] : [h('ul', {}, ...listed.map((cinema) => h('li', {}, box(` ${shortCinema(cinema.name)}`, ticks.has(cinema.id), [cinema.id]))))]))];
+    }));
+  };
+  drawCinemas();
+  const search = keyed(h('input', { type: 'search', placeholder: 'Search cinemas or towns', 'aria-label': 'Search cinemas' }) as HTMLInputElement, 'cinema-search');
+  search.value = cinemaSearch;
+  search.oninput = () => { cinemaSearch = search.value; drawCinemas(); }; // the list alone, so the box keeps its place
+  const chips = [...ticks].map((id) => names.get(id) ?? id).sort().map((name) => {
+    const id = [...ticks].find((tick) => (names.get(tick) ?? tick) === name)!;
+    return keyed(button(`${shortCinema(name)} ×`, () => changed(() => toggle(ticks, [id], false)), { class: 'chip', 'aria-label': `Untick ${name}` }), `chip-${id}`);
   });
 
-  const groups = new Map<string, { id: string; name: string }[]>();
-  for (const cinema of db.cinemas.filter((item) => item.stored)) {
-    const where = place({ id: cinema.id, name: cinema.name, city: cinema.address.city ?? '' });
-    groups.set(where, [...(groups.get(where) ?? []), cinema]);
-  }
-  const cinemaRows = [...groups].sort(([a], [b]) => a.localeCompare(b)).map(([where, cinemas]) => {
-    const ids = cinemas.map((cinema) => cinema.id);
-    const ticked = ids.filter((id) => ticks.has(id)).length;
-    const change = (list: string[], on: boolean) => { toggle(ticks, list, on); rebuild(); fillPanel(); };
-    return h('li', {},
-      checkbox(h('strong', {}, ` ${where}`), ticked === ids.length, (on) => change(ids, on), ticked > 0 && ticked < ids.length),
-      ...(cinemas.length > 1 || cinemas[0].name !== where
-        ? [h('ul', {}, ...cinemas.sort((a, b) => a.name.localeCompare(b.name)).map((cinema) =>
-            h('li', {}, checkbox(` ${shortCinema(cinema.name)}`, ticks.has(cinema.id), (on) => change([cinema.id], on)))))]
-        : []));
+  // Columns: those shown, in order, then the rest to add.
+  const move = (facet: q.Facet, step: number) => changed(() => {
+    const at = shown.indexOf(facet);
+    const to = at + step;
+    if (to >= 0 && to < shown.length) [shown[at], shown[to]] = [shown[to], shown[at]];
   });
+  const shownRows = shown.map((facet, index) => h('li', {},
+    h('span', { class: 'place dim' }, String(index + 1)),
+    h('span', { class: 'name' }, h('strong', {}, KINDS[facet].title), h('span', { class: 'dim' }, KINDS[facet].about)),
+    keyed(button('←', () => move(facet, -1), { 'aria-label': `Move ${KINDS[facet].title} left`, ...(index ? {} : { disabled: '' }) }), `left-${facet}`),
+    keyed(button('→', () => move(facet, 1), { 'aria-label': `Move ${KINDS[facet].title} right`, ...(index < shown.length - 1 ? {} : { disabled: '' }) }), `right-${facet}`),
+    keyed(button('×', () => changed(() => { shown.splice(shown.indexOf(facet), 1); delete view.picks[facet]; delete view.orders[facet]; view.focus = 0; }),
+      { 'aria-label': `Remove ${KINDS[facet].title}` }), `remove-${facet}`)));
+  const addable = q.FACETS.filter((facet) => !shown.includes(facet)).map((facet) =>
+    keyed(button(`+ ${KINDS[facet].title}`, () => changed(() => { shown.push(facet); }), { class: 'chip', title: KINDS[facet].about, 'aria-label': `Add ${KINDS[facet].title}` }), `add-${facet}`));
 
   const copied = h('span', { class: 'dim' });
   panel.replaceChildren(
-    h('div', { class: 'panel-head' }, h('h2', {}, 'Columns & settings'), button('Close', () => panel.close())),
-    h('p', { class: 'dim' }, 'Everything here is part of the page address; nothing is saved in the browser. Set it up, then bookmark the page.'),
-    h('p', { class: 'actions' },
-      button('Copy the address', () => {
-        noteNow();
-        navigator.clipboard.writeText(location.href).then(() => copied.replaceChildren('Copied.'), () => copied.replaceChildren('Could not copy; use the address bar.'));
-      }),
-      button('Default columns', () => { view.columns = [...DEFAULT_COLUMNS]; view.picks = {}; view.orders = {}; view.focus = 0; rebuild(); fillPanel(); }),
-      copied),
-    h('h3', {}, 'Columns'),
-    h('p', { class: 'dim' }, 'Tick the columns to show, and order them with the arrows. In the finder, [ and ] move the column you are in, and x hides it.'),
-    h('ul', { class: 'choices' }, ...columnRows),
-    h('h3', {}, 'Showing'),
-    h('ul', { class: 'choices' },
-      h('li', {}, checkbox(' London only: the cinemas in Greater London', londonOnly(), () => flipLondon())),
-      h('li', {}, checkbox(' Event cinema: concerts, theatre and other specials not in Limitless', extras.has('events'), () => {
-        toggle(extras, ['events']);
-        rebuild();
-        fillPanel();
-      }))),
-    h('h3', {}, 'Hidden films'),
-    hidden.size
-      ? h('ul', { class: 'choices' }, ...q.titles(db, [...hidden]).map((film) => h('li', {}, button('Show again', () => { hideFilm(film.id); fillPanel(); }), ` ${film.title}`)))
-      : h('p', { class: 'dim' }, 'None. Press h on a film or showtime to hide that film everywhere.'),
-    h('h3', {}, 'Your cinemas'),
-    h('p', { class: 'dim' }, ticks.size ? `${count(ticks.size, 'cinema')} ticked: everything shows only those. ` : 'None ticked: every cinema is shown. Tick the ones you go to.',
-      ...(ticks.size ? [button('Untick all', () => { ticks.clear(); address(); rebuild(); fillPanel(); })] : [])),
-    h('ul', { class: 'choices cinemas' }, ...cinemaRows),
+    h('div', { class: 'panel-head' }, h('h2', {}, 'Settings'), keyed(button('Done', () => panel.close()), 'done')),
+
+    h('section', {},
+      h('h3', {}, 'Cinemas'),
+      h('div', { class: 'options' },
+        option('all', 'Every cinema', `all ${db.cinemas.filter((cinema) => cinema.stored).length} ODEONs`, () => { choosing = false; ticks.clear(); address(); }),
+        option('london', 'London only', `the ${LONDON.size} in Greater London · key l`, () => { choosing = false; ticks.clear(); toggle(ticks, [...LONDON], true); }),
+        option('some', 'Choose cinemas', mode === 'some' && ticks.size ? where() : 'the ones you go to', () => { choosing = true; })),
+      ...(mode === 'some' ? [
+        ...(chips.length ? [h('p', { class: 'chips' }, ...chips)] : [h('p', { class: 'dim' }, 'Tick the cinemas you go to; until you do, every cinema is shown.')]),
+        search,
+        cinemaList,
+      ] : [])),
+
+    h('section', {},
+      h('h3', {}, 'Columns'),
+      h('p', { class: 'dim' }, 'Left to right, before the showtimes. In the finder, [ and ] move the column you are in and x removes it.'),
+      shown.length ? h('ol', { class: 'choices shown' }, ...shownRows) : h('p', { class: 'dim' }, 'None: just the showtimes.'),
+      ...(addable.length ? [h('p', { class: 'chips' }, h('span', { class: 'dim' }, 'Add a column: '), ...addable)] : [])),
+
+    h('section', {},
+      h('h3', {}, 'Left out'),
+      h('ul', { class: 'choices' },
+        h('li', {}, keyed(checkbox(h('span', {}, h('strong', {}, ' Show event cinema'), h('span', { class: 'dim' }, ' concerts, theatre and other specials not in Limitless')),
+          extras.has('events'), () => changed(() => toggle(extras, ['events']))), 'events'))),
+      hidden.size
+        ? h('ul', { class: 'choices' }, ...q.titles(db, [...hidden]).map((film) => h('li', {},
+            h('span', { class: 'name' }, `Hidden: ${film.title}`),
+            keyed(button('Show again', () => changed(() => hideFilm(film.id))), `unhide-${film.id}`))))
+        : h('p', { class: 'dim' }, 'No hidden films. Press h on a film or showtime to hide that film everywhere.')),
+
+    h('section', {},
+      h('h3', {}, 'Keep this view'),
+      h('p', { class: 'dim' }, 'All of this is in the page address, and nothing is saved in the browser. Bookmark the page to keep it, or share the link.'),
+      h('p', { class: 'actions' },
+        keyed(button('Copy link', () => {
+          noteNow();
+          navigator.clipboard.writeText(location.href).then(() => copied.replaceChildren('Copied.'), () => copied.replaceChildren('Could not copy; use the address bar.'));
+        }), 'copy'),
+        keyed(button('Start over', () => changed(() => {
+          choosing = false;
+          for (const chosen of [ticks, hidden, extras]) chosen.clear();
+          address();
+          Object.assign(view, { columns: [...DEFAULT_COLUMNS], picks: {}, orders: {}, focus: 0, row: 0, sort: 'date', descending: false, text: '' });
+        }), { title: 'Every cinema, the default columns, nothing hidden' }), 'reset'),
+        copied)),
   );
   panel.scrollTop = scrolled;
+  if (held) panel.querySelector<HTMLElement>(`[data-key="${CSS.escape(held)}"]`)?.focus();
 }
 
 // ---- Keys ----------------------------------------------------------------------

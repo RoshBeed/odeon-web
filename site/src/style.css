@@ -79,7 +79,7 @@ footer kbd { color: var(--accent); font: inherit; }
   :root { font-size: 15px; }
   #app { padding: 0 12px 56px; }
   header { flex-wrap: wrap; gap: 6px 14px; }
-  header h1 { flex-basis: 100%; overflow-wrap: anywhere; }
+  header h1 { flex-basis: 100%; overflow-wrap: anywhere; order: 1; } /* below Back and the London tick */
   .intro dl { grid-template-columns: 1fr; gap: 0; }
   .phone { display: block; }
   .phone + dl { display: none; }
@@ -155,3 +155,6 @@ footer kbd { color: var(--accent); font: inherit; }
 .column.focused .facet li.selected { background: var(--select); color: #fff; }
 .column.focused .facet li.selected .dim, .column.focused .facet li.selected strong { color: #fff; }
 .column .cards .tick { padding: 0 4px 0 0; font-size: 1rem; }
+/* The London only tick, at the far end of the header. */
+header .area { margin-left: auto; color: var(--text); cursor: pointer; white-space: nowrap; }
+header .area input { accent-color: var(--accent); margin: 0 4px 0 0; vertical-align: -2px; }

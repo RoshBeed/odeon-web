@@ -2,15 +2,23 @@
 // bookmark or a shared link carries them: ?cinemas=155,090&hidden=HO00012345
 import { LONDON } from './tags';
 
+// Greater London's cinemas all ticked are written as one word: ?cinemas=london
+const AREA = 'london';
+
 export function readChoice(search: string, name: string): Set<string> {
-  return new Set((new URLSearchParams(search).get(name) ?? '').split(',').filter(Boolean));
+  const values = (new URLSearchParams(search).get(name) ?? '').split(',').filter(Boolean);
+  return new Set(name === 'cinemas' ? values.flatMap((value) => (value === AREA ? [...LONDON] : [value])) : values);
 }
 
 /** The query string for these choices; empty when nothing is chosen. */
 export function writeChoices(choices: Record<string, Set<string>>): string {
   const parts = Object.entries(choices)
     .filter(([, chosen]) => chosen.size)
-    .map(([name, chosen]) => `${name}=${[...chosen].map(encodeURIComponent).join(',')}`);
+    .map(([name, chosen]) => {
+      let values = [...chosen];
+      if (name === 'cinemas' && [...LONDON].every((id) => chosen.has(id))) values = [AREA, ...values.filter((id) => !LONDON.has(id))];
+      return `${name}=${values.map(encodeURIComponent).join(',')}`;
+    });
   return parts.length ? '?' + parts.join('&') : '';
 }
 

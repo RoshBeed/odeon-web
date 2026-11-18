@@ -51,19 +51,13 @@ export interface View {
   text: string;
 }
 
-/** The view in the address after the `#`. Addresses from before the finder was the
- *  whole site (#/browse|films, #/find?film=…) open the default view, with the
- *  finder's choices they carry. */
+/** The view in the address after the `#`: `#/?cols=…`. */
 export function readView(hash: string): View {
-  const [route, query = ''] = (hash.replace(/^#\/?/, '').split('|').pop() ?? '').split('?');
-  const params = new URLSearchParams(route === '' || route === 'find' ? query : '');
+  const params = new URLSearchParams(hash.split('?')[1] ?? '');
   const known = (name: string): name is Facet => (FACETS as readonly string[]).includes(name);
-  // The finder's first addresses had no `cols`: they meant its four columns of then.
-  const unlisted: Facet[] = route === 'find' ? ['day', 'film', 'cinema', 'picture'] : DEFAULT_COLUMNS;
-  const columns = params.has('cols') ? [...new Set(params.get('cols')!.split(',').filter(known))] : [...unlisted];
+  const columns = params.has('cols') ? [...new Set(params.get('cols')!.split(',').filter(known))] : [...DEFAULT_COLUMNS];
   const picks: Picks = {};
   for (const column of columns) if (params.get(column)) picks[column] = params.get(column)!;
-  if (params.get('format') && columns.includes('picture') && !picks.picture) picks.picture = params.get('format')!; // the finder's first name for it
   const orders: View['orders'] = {};
   for (const entry of (params.get('order') ?? '').split(',')) {
     const [column, order] = entry.split(':');

@@ -70,9 +70,7 @@ test('the view is read from and written to the address', () => {
   expect(writeView(readView('#/'))).toBe('#/');
   expect(readView('#/?cols=film,nonsense,film&day=2026-11-20').columns).toEqual(['film']);
   expect(readView('#/?cols=film&day=2026-11-20').picks).toEqual({});
-  // Addresses from before: the finder's own, with its format column, and any other page.
-  expect(readView('#/find?film=F1&format=IMAX&col=4')).toMatchObject({ columns: ['day', 'film', 'cinema', 'picture'], picks: { film: 'F1', picture: 'IMAX' }, focus: 3 });
-  expect(readView('#/browse?row=2|films?row=5')).toMatchObject({ columns: DEFAULT_COLUMNS, picks: {}, focus: 0, row: 0 });
+  expect(readView('').columns).toEqual(DEFAULT_COLUMNS);
 });
 
 test('certificates sort by age, with unrated films last', () => {

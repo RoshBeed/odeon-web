@@ -18,3 +18,7 @@ dist/
 *.sqlite-*
 *.sqlite.gz
 site/public/data/
+
+# Browser test output
+test-results/
+playwright-report/

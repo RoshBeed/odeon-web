@@ -14,6 +14,8 @@ export function exportListings(sqlite: DatabaseSync, only?: Set<string>): Data {
     if (!numbers.has(key)) numbers.set(key, values.push(value) - 1);
     return numbers.get(key)!;
   };
+  // ODEON's own names sometimes end in a space ("3D - Web ", "Musical ").
+  const names = (json: string) => (JSON.parse(json) as string[]).map((name) => name.trim());
   const all = (sql: string) => {
     const statement = sqlite.prepare(sql);
     statement.setReturnArrays(true); // two columns may share a name
@@ -33,7 +35,7 @@ export function exportListings(sqlite: DatabaseSync, only?: Set<string>): Data {
      ORDER BY f.id`,
   ).map(([id, title, runtime, certificate, release, genres, people, distributor, synopsis, trailer, imdb, imdbId, metacritic]): Film => ({
     id, title, runtime, certificate, release, distributor, synopsis, trailer, imdb, imdbId, metacritic,
-    genres: JSON.parse(genres),
+    genres: names(genres),
     people: JSON.parse(people),
   }))) {
     const key = film.title.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '') || film.id;
@@ -51,7 +53,12 @@ export function exportListings(sqlite: DatabaseSync, only?: Set<string>): Data {
     return main;
   });
   const film = (id: string) => merged.get(id) ?? id;
+  // ODEON publishes each Friday-to-Thursday week on a Tuesday. The ingest
+  // records the Tuesday whose week it holds; that week ends nine days later.
+  const [[week] = []] = all("SELECT value FROM state WHERE key = 'release_week'") as unknown as string[][];
+  const fullUntil = week ? new Date(Date.parse(week + 'T00:00:00Z') + 9 * 86400000).toISOString().slice(0, 10) : null;
   return {
+    fullUntil,
     ingested: all("SELECT max(finished_at) FROM runs WHERE source = 'odeon' AND status = 'ok'")[0][0],
     cinemas: all('SELECT id, name, stored, address FROM cinemas').map(([id, name, stored, address]) => ({
       id, name, stored: Boolean(stored), address: JSON.parse(address),
@@ -61,12 +68,18 @@ export function exportListings(sqlite: DatabaseSync, only?: Set<string>): Data {
       .filter(([cinema]) => !only || only.has(cinema))
       .map(([cinema, id]): [string, string] => [cinema, film(id)]),
     screens: all('SELECT cinema_id, screen_id, capacity FROM screens') as unknown as Data['screens'],
+    // From every cinema's showings, so that a film is an event whichever cinemas are exported.
+    // Hiring a screen is listed as a film too, and is no more one than a concert is.
+    events: [...new Set(all(
+      `SELECT DISTINCT s.film_id FROM screenings s, json_each(s.experiences) tag WHERE trim(tag.value) = 'Event Cinema'
+       UNION SELECT id FROM films WHERE title LIKE 'Screen Hire%'`,
+    ).map(([id]) => film(id)))],
     // In the order the site lists them, which it relies on.
     rows: all(
       `SELECT cinema_id, id, film_id, business_date, starts_at, time, film_starts_at, film_ends_at,
               screen, screen_id, experiences, seating, sold_out
        FROM screenings ORDER BY starts_at, cinema_id, id`,
-    ).filter(([cinema]) => !only || only.has(cinema)).map((row) => row.map((value, column) => number(column === 2 ? film(value) : column === 10 || column === 11 ? JSON.parse(value) : value))),
+    ).filter(([cinema]) => !only || only.has(cinema)).map((row) => row.map((value, column) => number(column === 2 ? film(value) : column === 10 || column === 11 ? names(value) : value))),
     values,
   };
 }

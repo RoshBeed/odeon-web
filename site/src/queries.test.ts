@@ -34,6 +34,7 @@ beforeEach(() => {
     INSERT INTO screens VALUES ('155', '155-1', 300);
     INSERT INTO ratings VALUES ('F1', 'imdb', 8.4, 'tt1'), ('F1', 'metacritic', 74, NULL);
     INSERT INTO runs (source, started_at, finished_at, status) VALUES ('odeon', 'a', '2026-11-10T05:00:00Z', 'ok');
+    INSERT INTO state VALUES ('release_week', '2026-11-10');
   `);
   screening('155-0', '155', 'F1', '2026-11-11', '08:00'); // already started
   screening('155-1', '155', 'F1', '2026-11-11', '18:00', { experiences: '["IMAX"]', seating: '["Recliner Saver","Recliner","Premier"]' });
@@ -42,112 +43,83 @@ beforeEach(() => {
   db = q.open(exportListings(sqlite));
 });
 
+// Counts per column, as plain objects, and the IDs of the showings that match every choice.
+function found(facets: q.Facet[], picks: q.Picks = {}, within = scope, text = '') {
+  const result = q.find(db, within, facets, picks, text);
+  return { counts: Object.fromEntries(facets.map((facet, index) => [facet, Object.fromEntries(result.counts[index])])), ids: result.shows.map((show) => show.id) };
+}
+
 describe('queries', () => {
   test('the weekend is Friday to Sunday, or what is left of it', () => {
     expect(q.weekend('2026-11-11')).toEqual(['2026-11-13', '2026-11-15']);
     expect(q.weekend('2026-11-14')).toEqual(['2026-11-14', '2026-11-15']);
   });
 
-  test('home counts only what has not started', () => {
-    const home = q.home(db, scope);
-    expect([home.films, home.showings, home.cinemas, home.tonight, home.weekendShows]).toEqual([2, 3, 2, 1, 1]);
-    expect([home.days, home.from, home.to, home.soon, home.next?.title]).toEqual([3, '2026-11-11', '2026-11-20', 1, 'Later']);
-  });
-
-  test('ticked cinemas narrow every count', () => {
-    const ticked = { ...scope, cinemas: ['001'] };
-    expect(q.home(db, ticked).showings).toBe(1);
-    expect(q.films(db, ticked).map((film) => film.title)).toEqual(['Dune']);
-    expect(q.soon(db, ticked)).toEqual([]);
-    expect(q.dates(db, ticked)).toEqual([{ date: '2026-11-20', films: 1, showings: 1 }]);
-    expect(q.showings(db, ticked, {}).total).toBe(1);
-  });
-
-  test('films carry ratings, cinema counts and their next showing', () => {
-    expect(q.films(db, scope)[0]).toEqual({
-      id: 'F1', title: 'Dune', certificate: '12A', runtime: 155, release: '2026-11-06',
-      imdb: 8.4, metacritic: 74, cinemas: 2, showings: 2, next: '2026-11-11T18:00:00Z',
+  test('each column counts with the other columns chosen, and only what has not started', () => {
+    expect(found(['day', 'film', 'cinema', 'picture'])).toEqual({
+      counts: {
+        day: { '2026-11-11': 1, '2026-11-14': 1, weekend: 1, '2026-11-20': 1 },
+        film: { F1: 2, F2: 1 },
+        cinema: { '155': 2, '001': 1 },
+        picture: { IMAX: 1 },
+      },
+      ids: ['155-1', '155-2', '001-1'],
     });
-    const film = q.film(db, 'F1')!;
-    expect([film.genres, film.people[0].name, film.imdbId]).toEqual([['Sci-Fi'], 'Denis Villeneuve', 'tt1']);
-    expect(q.film(db, 'nope')).toBeNull();
+    // Choosing a film narrows the days and cinemas, but not the list of films itself.
+    expect(found(['day', 'film', 'cinema'], { film: 'F2' }).counts).toEqual({ day: { '2026-11-14': 1, weekend: 1 }, film: { F1: 2, F2: 1 }, cinema: { '155': 1 } });
+    expect(found(['film', 'picture', 'cinema'], { picture: 'IMAX', cinema: '001' })).toEqual({ counts: { film: {}, picture: {}, cinema: { '155': 1 } }, ids: [] });
+    expect(found(['day'], { day: 'weekend' }).ids).toEqual(['155-2']);
   });
 
-  test('cinemas list every stored cinema, or those showing one film', () => {
-    expect(q.cinemas(db, scope).map((c) => [c.name, c.city, c.films, c.showings])).toEqual([
-      ['Aberdeen', '', 1, 1],
-      ['London West End', 'London', 2, 2],
-    ]);
-    expect(q.cinemas(db, scope, 'F2').map((c) => c.id)).toEqual(['155']);
+  test('the columns made from the film: certificate, genre, people, distributor and release', () => {
+    expect(found(['cert', 'genre', 'person', 'distributor', 'release']).counts).toEqual({
+      cert: { '12A': 2, PG: 1 },
+      genre: { 'Sci-Fi': 2 },
+      person: { 'Denis Villeneuve': 2 },
+      distributor: { Warner: 2 },
+      release: { out: 3 },
+    });
+    expect(found(['person'], { person: 'Denis Villeneuve' }).ids).toEqual(['155-1', '001-1']);
+    expect(found(['release'], {}, { ...scope, today: '2026-11-01' }).counts.release).toEqual({ soon: 2, out: 1 });
   });
 
-  test('showtimes filter, search, sort and page', () => {
-    const ids = (filter: q.ShowingFilter, order = 'date', descending = false) =>
-      q.showings(db, scope, filter, order, descending).rows.map((row) => row.id);
-    expect(ids({})).toEqual(['155-1', '155-2', '001-1']);
-    expect(ids({ from: '2026-11-13', to: '2026-11-15' })).toEqual(['155-2']);
-    expect(ids({ film: 'F1', cinema: '155' })).toEqual(['155-1']);
-    expect(ids({ text: 'IMAX' })).toEqual(['155-1']);
-    expect(ids({ text: 'aberdeen' })).toEqual(['001-1']);
-    // Screen 1, Screen 10, then the named screen.
-    expect(ids({}, 'screen')).toEqual(['155-1', '001-1', '155-2']);
-    expect(ids({}, 'screen', true)).toEqual(['155-2', '001-1', '155-1']);
-    expect(ids({}, 'seats')[0]).toBe('155-1');
-    expect(ids({}, 'film', true)[0]).toBe('155-2');
-    const page = q.showings(db, scope, {}, 'date', false, 1, 1);
-    expect([page.total, page.rows[0].id, page.rows[0].soldOut, page.rows[0].capacity]).toEqual([3, '155-2', true, null]);
-    expect(q.showings(db, scope, {}).rows[0]).toMatchObject({ experiences: ['IMAX'], capacity: 300, cinema: 'London West End' });
+  test('screens, seats and locations: one value per seat type, without price tiers', () => {
+    expect(found(['screen', 'seat', 'location']).counts).toEqual({
+      screen: { '155/155-1': 1, '155/155-L': 1, '001/001-10': 1 },
+      seat: { Recliner: 1, Premier: 1 },
+      location: { 'Greater London': 2, Aberdeen: 1 },
+    });
+    expect(q.screenOf(db, '155/155-1')).toEqual({ cinema: 'London West End', screen: 'Screen 1', capacity: 300 });
+    expect(found(['seat'], { seat: 'Recliner Saver' }).ids).toEqual([]);
   });
 
-  test('hidden films drop out of every list', () => {
-    const hiding = { ...scope, hidden: ['F1'] };
-    expect(q.films(db, hiding).map((film) => film.id)).toEqual(['F2']);
-    expect(q.showings(db, hiding, {}).total).toBe(1);
-    expect(q.soon(db, { ...scope, hidden: ['F3'] })).toEqual([]);
+  test('ticked cinemas and hidden films narrow every column', () => {
+    expect(found(['film', 'cinema'], {}, { ...scope, cinemas: ['001'] })).toEqual({ counts: { film: { F1: 1 }, cinema: { '001': 1 } }, ids: ['001-1'] });
+    expect(found(['film'], {}, { ...scope, hidden: ['F1'] }).ids).toEqual(['155-2']);
     expect(q.titles(db, ['F2', 'F1'])).toEqual([{ id: 'F1', title: 'Dune' }, { id: 'F2', title: 'Paddington' }]);
   });
 
-  test('films narrow by certificate, genre, person and distributor', () => {
-    const ids = (filter: q.FilmFilter) => q.films(db, scope, filter).map((film) => film.id);
-    expect(ids({ certificate: 'PG' })).toEqual(['F2']);
-    expect(ids({ genre: 'Sci-Fi' })).toEqual(['F1']);
-    expect(ids({ person: 'Denis Villeneuve' })).toEqual(['F1']);
-    expect(ids({ distributor: 'Warner' })).toEqual(['F1']);
-    expect(ids({ genre: 'Western' })).toEqual([]);
+  test('showtimes are searched and ordered, and a search leaves the counts alone', () => {
+    expect(found(['film'], {}, scope, 'imax')).toEqual({ counts: { film: { F1: 2, F2: 1 } }, ids: ['155-1'] });
+    expect(found([], {}, scope, 'aberdeen').ids).toEqual(['001-1']);
+    const ids = (sort: string, descending = false) => q.arrange(q.find(db, scope, [], {}).shows, sort, descending).rows.map((row) => row.id);
+    // Screen 1, Screen 10, then the named screen.
+    expect(ids('screen')).toEqual(['155-1', '001-1', '155-2']);
+    expect(ids('screen', true)).toEqual(['155-2', '001-1', '155-1']);
+    expect(ids('seats')[0]).toBe('155-1');
+    expect(ids('film', true)[0]).toBe('155-2');
+    const first = q.arrange(q.find(db, scope, [], {}).shows, 'date', false, 1);
+    expect([first.total, first.rows.length]).toEqual([3, 1]);
+    expect(first.rows[0]).toMatchObject({ id: '155-1', experiences: ['IMAX'], capacity: 300, cinema: 'London West End', soldOut: false });
   });
 
-  test('facets count films and showings by what the film is', () => {
-    expect(q.facet(db, scope, 'certificate')).toEqual([
-      { name: '12A', role: null, films: 1, showings: 2 },
-      { name: 'PG', role: null, films: 1, showings: 1 },
-    ]);
-    expect(q.facet(db, scope, 'genre')).toEqual([{ name: 'Sci-Fi', role: null, films: 1, showings: 2 }]);
-    expect(q.facet(db, scope, 'person')).toEqual([{ name: 'Denis Villeneuve', role: 'Director', films: 1, showings: 2 }]);
-    expect(q.facet(db, scope, 'distributor').map((row) => row.name)).toEqual(['Warner']);
+  test('films carry their ratings and people', () => {
+    const film = q.film(db, 'F1')!;
+    expect([film.imdb, film.metacritic, film.genres, film.people[0].name, film.imdbId]).toEqual([8.4, 74, ['Sci-Fi'], 'Denis Villeneuve', 'tt1']);
+    expect(q.film(db, 'nope')).toBeNull();
   });
 
-  test('tags and seat types are counted once per showing, without price tiers', () => {
-    expect(q.tags(db, scope, 'experiences')).toEqual([{ tag: 'IMAX', showings: 1, films: 1, cinemas: 1 }]);
-    expect(q.tags(db, scope, 'seating')).toEqual([
-      { tag: 'Premier', showings: 1, films: 1, cinemas: 1 },
-      { tag: 'Recliner', showings: 1, films: 1, cinemas: 1 },
-    ]);
-    const ids = (filter: q.ShowingFilter) => q.showings(db, scope, filter).rows.map((row) => row.id);
-    expect(ids({ tag: 'IMAX' })).toEqual(['155-1']);
-    expect(ids({ seat: 'Recliner' })).toEqual(['155-1']);
-    expect(ids({ seat: 'Recliner Saver' })).toEqual([]);
-    expect(ids({ cinema: '155', screen: '155-L' })).toEqual(['155-2']);
-  });
-
-  test('screens list their size, showings and tags, biggest first', () => {
-    expect(q.screens(db, scope)[0]).toEqual({
-      cinemaId: '155', screenId: '155-1', cinema: 'London West End', screen: 'Screen 1',
-      capacity: 300, showings: 1, tags: ['IMAX'],
-    });
-    expect(q.screens(db, scope)).toHaveLength(3);
-  });
-
-  test('one showing carries what its page and a calendar entry need', () => {
+  test('one showing carries what its details and a calendar entry need', () => {
     expect(q.showing(db, '155', '155-1')).toMatchObject({
       title: 'Dune', cinema: 'London West End', runtime: 155, capacity: 300,
       seating: ['Recliner Saver', 'Recliner', 'Premier'], address: { city: 'London' }, filmEndsAt: null,
@@ -159,7 +131,8 @@ describe('queries', () => {
     sqlite.exec(`
       INSERT INTO films VALUES ('F1-IE', 'DUNE ', 150, '12', '2026-11-06', '[]', '[]', 'Warner IR', '', NULL),
                                ('F4', 'Live: Opera!', 180, '', '2026-11-01', '[]', '[]', '', '', NULL),
-                               ('F4-IE', 'Live Opera', 180, '', '2026-11-01', '[]', '[]', '', '', NULL);
+                               ('F4-IE', 'Live Opera', 180, '', '2026-11-01', '[]', '[]', '', '', NULL),
+                               ('F5', 'Screen Hire - 4 Hours', 240, '', '2026-11-01', '["Musical "]', '[]', '', '', NULL);
       INSERT INTO ratings VALUES ('F4-IE', 'imdb', 7.1, 'tt4');
       INSERT INTO availability VALUES ('001', 'F1-IE', '["NowShowing"]');
     `);
@@ -167,29 +140,46 @@ describe('queries', () => {
     screening('155-3', '155', 'F4', '2026-11-12', '19:00', { experiences: '["Event Cinema"]' });
     screening('155-4', '155', 'F4', '2026-11-13', '19:00', { experiences: '["Event Cinema"]' });
     screening('001-3', '001', 'F4-IE', '2026-11-12', '19:00'); // an event even where a showing lacks the tag
+    screening('001-4', '001', 'F5', '2026-11-12', '09:00', { experiences: '["3D - Web "]' }); // private hire, and names that end in a space
     db = q.open(exportListings(sqlite));
-    expect(q.films(db, scope).map((film) => [film.id, film.title, film.showings, film.imdb])).toEqual([
-      ['F1', 'Dune', 3, 8.4],
-      ['F4', 'Live: Opera!', 3, 7.1],
-      ['F2', 'Paddington', 1, null],
-    ]);
-    expect(q.film(db, 'F1-IE')).toBeNull();
+    expect(q.film(db, 'F5')!.genres).toEqual(['Musical']);
+    expect(found(['picture'], { picture: '3D - Web' }).ids).toEqual(['001-4']);
     const quiet = { ...scope, noEvents: true };
-    expect(q.films(db, quiet).map((film) => film.id)).toEqual(['F1', 'F2']);
-    expect(q.showings(db, quiet, {}).total).toBe(4);
-    expect(q.home(db, quiet).showings).toBe(4);
-    expect(q.cinemas(db, quiet).map((cinema) => cinema.showings)).toEqual([2, 2]);
+    expect(found(['film'], {}, quiet).counts.film).toEqual({ F1: 3, F2: 1 });
+    expect(found(['film']).counts.film).toEqual({ F1: 3, F2: 1, F4: 3, F5: 1 });
+    expect(q.film(db, 'F1-IE')).toBeNull();
+    expect(q.film(db, 'F4')!.imdb).toBe(7.1);
+    // The film is an event at cinema 001 too, though only cinema 155's showings carry the tag.
+    db = q.open(exportListings(sqlite, new Set(['001'])));
+    expect(found(['film'], {}, quiet).counts.film).toEqual({ F1: 2 });
   });
 
   test('listings for some cinemas keep every cinema and film, but only their showings', () => {
-    const some = q.open(exportListings(sqlite, new Set(['001'])));
-    expect(q.showings(some, scope, {}).rows.map((row) => row.id)).toEqual(['001-1']);
-    expect(q.soon(some, scope)).toEqual([]);
-    expect(q.cinemas(some, scope).map((cinema) => [cinema.name, cinema.showings])).toEqual([['Aberdeen', 1], ['London West End', 0]]);
-    expect(q.film(some, 'F2')?.title).toBe('Paddington');
+    db = q.open(exportListings(sqlite, new Set(['001'])));
+    expect(found([]).ids).toEqual(['001-1']);
+    expect(db.cinemas.map((cinema) => cinema.name)).toEqual(['London West End', 'Aberdeen']);
+    expect(q.film(db, 'F2')?.title).toBe('Paddington');
+  });
+
+  test('double bills are the films that end just before or start just after', () => {
+    const timed = (id: string, film: string, start: string, end: string) => sqlite
+      .prepare("INSERT INTO screenings VALUES ('155', ?, ?, '2026-11-12', ?, ?, ?, ?, 'Screen 1', '155-1', '[]', '[]', 0)")
+      .run(id, film, `2026-11-12T${start}:00Z`, start, `2026-11-12T${start}:00Z`, `2026-11-12T${end}:00Z`);
+    timed('A', 'F1', '18:00', '20:30');
+    timed('B', 'F2', '20:50', '22:30'); // 20 minutes after A ends
+    timed('C', 'F2', '21:30', '23:10'); // an hour after: too long a wait
+    timed('D', 'F1', '20:40', '23:10'); // the same film
+    timed('E', 'F2', '16:00', '17:40'); // ends 20 minutes before A starts
+    db = q.open(exportListings(sqlite));
+    const near = q.around(db, scope, '155', 'A');
+    expect(near.after.map((row) => [row.id, row.gap])).toEqual([['B', 20]]);
+    expect(near.before.map((row) => [row.id, row.gap])).toEqual([['E', 20]]);
+    expect(q.around(db, { ...scope, hidden: ['F2'] }, '155', 'A').after).toEqual([]);
   });
 
   test('the last successful ingest is reported', () => {
     expect(db.ingested).toBe('2026-11-10T05:00:00Z');
+    // The week published on Tuesday 10 November runs to Thursday 19.
+    expect(db.fullUntil).toBe('2026-11-19');
   });
 });

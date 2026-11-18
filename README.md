@@ -1,38 +1,44 @@
 # ODEON listings
 
-A static site for browsing what is on at ODEON cinemas: films, cinemas and
-locations, tonight, this weekend, what opens soon, and every showtime with its
-screen and how many seats that screen has. You can also browse by screen size,
-picture format, language, seating, rating, people, genre and distributor.
-Nothing is booked here; each showing links to ODEON's own booking page and can
-be added to your calendar.
+A static site for finding what is on at ODEON cinemas. It is one finder: columns
+of choices side by side (a day, a film, a cinema, a picture format…), each counting
+what the others leave, then the showtimes that match, then the highlighted one's
+details: its screen and how many seats it has, double bills, and the film's
+synopsis, ratings and trailer. You choose which columns to show and in what order,
+from Day, Film, Cinema, Location, Picture, Language, Accessibility, Events,
+Seating, Screen, Certificate, Genre, People, Distributor and Release. Nothing is
+booked here; each showing links to ODEON's own booking page and can be added to
+your calendar.
 
 There is no server. Once a week a GitHub Actions workflow fetches the listings
 from ODEON into one SQLite file. The site is plain files on GitHub Pages; the
 browser downloads the listings once (under 1 MB, less when only Greater London
-cinemas are ticked) and keeps them in memory. Cinemas
-you tick and films you hide are kept in the page's address, so a bookmark or a
-shared link carries them; the Settings page gathers those choices. Concerts,
-theatre and other Event Cinema screenings are left out unless you ask for them. It works on a phone
-by tapping, and on a computer by keyboard or mouse.
+cinemas are ticked) and keeps them in memory. The columns, your choices in them,
+the cinemas you tick and the films you hide are all kept in the page's address,
+so a bookmark is a saved view and a shared link opens the same way. Concerts,
+theatre and other Event Cinema screenings are left out unless you ask for them.
+On a phone one column shows at a time; on a computer it is driven by keyboard
+or mouse.
 
 ## Using the site
 
 | Key | Does |
 | --- | --- |
-| ↑ ↓ | Move |
-| Enter | Open the selected row |
-| Esc | Go back |
-| / | Search the table |
-| s, or a click on a heading | Sort |
-| n, p | Next and previous page |
-| Space | Tick a cinema, or every cinema in a location |
-| h | Hide a film everywhere, or show it again |
-| b | Book the selected showing on odeon.co.uk |
-| c | Add the selected showing to your calendar |
+| ← → | Move between columns |
+| ↑ ↓ | Choose in a column, or move through the showtimes |
+| Esc | Back to All in a column, or clear its search |
+| / | Search the column you are in |
+| s | Order the column you are in (A–Z, most showings, or by rating) |
+| [ ] | Move the column you are in left or right |
+| x | Hide the column you are in |
+| o | Columns & settings: add, remove and order columns; event cinema, hidden films, your cinemas |
+| l | London only: show only Greater London's cinemas |
+| h | Hide a film everywhere |
+| t | Play the trailer |
+| b | Book the highlighted showing on odeon.co.uk |
+| c | Add the highlighted showing to your calendar |
 
-Everything also works by clicking or tapping. On a phone each row is a card and
-sorting is a menu above the list.
+Everything also works by clicking or tapping.
 
 ## How it is put together
 

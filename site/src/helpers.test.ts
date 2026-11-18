@@ -1,14 +1,18 @@
 import { expect, test } from 'vitest';
 import { ics } from './calendar';
-import { needsEveryCinema, readChoice, readPage, writeChoices, writePage } from './choices';
+import { DEFAULT_COLUMNS, needsEveryCinema, readChoice, readView, writeChoices, writeView } from './choices';
 import type { ShowingDetail } from './queries';
-import { certificateAge, formats, place, tagKind, tagLabel } from './tags';
+import { certificateAge, formats, LONDON, place, tagKind, tagLabel } from './tags';
 
 test('tags are grouped and renamed for people', () => {
   expect(['IMAX 3D_Web', 'Hindi (Audio)', 'English (Sub)', 'Audio Described', '£5 Web', 'Kids', 'Recliner'].map(tagKind)).toEqual([
     'Picture', 'Language', 'Language', 'Accessibility', 'Pricing', 'Events', 'Seating',
   ]);
-  expect(tagLabel('Hindi (Audio)')).toBe('Hindi');
+  // ODEON's variants of a picture format are picture formats too.
+  expect(['3D - Web', 'XL 3D Web', 'Laser 3D', 'Infinity Vision', 'Dolby', 'Dubbed', 'Watchword'].map(tagKind)).toEqual([
+    'Picture', 'Picture', 'Picture', 'Picture', 'Picture', 'Language', 'Accessibility',
+  ]);
+  expect(['Hindi (Audio)', '3D - Web', 'XL 3D Web', 'XL Web', 'IMAX'].map(tagLabel)).toEqual(['Hindi', '3D', 'XL 3D', 'XL', 'IMAX']);
   expect(formats(['IMAX 3D_Web', 'Saver', 'Wheelchair Accessible', 'English (Sub)', 'Kids'])).toBe('IMAX 3D, English subtitles');
 });
 
@@ -20,7 +24,7 @@ test('cinemas are placed by borough, override or address', () => {
 });
 
 const show: ShowingDetail = {
-  cinemaId: '155', id: '155-1', filmId: 'F1', date: '2026-11-12', startsAt: '2026-11-12T18:00:00Z', time: '18:00',
+  cinemaId: '155', id: '155-1', filmId: 'F1', date: '2026-11-12', startsAt: '2026-11-12T18:00:00Z', time: '18:00', endsAt: '2026-11-12T21:00:00Z',
   title: 'Dune; Part, Two', cinema: 'London West End', screen: 'Screen 1', capacity: 300, experiences: ['IMAX', 'Saver'],
   soldOut: false, filmStartsAt: '2026-11-12T18:25:00Z', filmEndsAt: '2026-11-12T21:00:00Z', runtime: 155,
   seating: [], address: { line1: 'Leicester Square', city: 'London' },
@@ -49,32 +53,37 @@ test('choices are read from and written to the address', () => {
   expect(writeChoices({ cinemas: new Set(), hidden: new Set() })).toBe('');
 });
 
-test("Greater London's listings will do until a page is about another cinema", () => {
-  const london = new Set(['155', '090']);
-  expect(['', 'films', 'all', 'cinema/155', 'film/F1/090', 'film/F1', 'film/F1/all'].map((route) => needsEveryCinema(route, london))).toEqual(
-    [false, false, false, false, false, false, false]);
-  expect(['cinemas', 'locations', 'location/Bath', 'cinema/001', 'show/001/1', 'film/F1/001'].map((route) => needsEveryCinema(route, london))).toEqual(
-    [true, true, true, true, true, true]);
-  expect(needsEveryCinema('', new Set())).toBe(true);
-  expect(needsEveryCinema('', new Set(['155', '001']))).toBe(true);
+test("Greater London's listings will do while only its cinemas are ticked", () => {
+  expect(needsEveryCinema(new Set())).toBe(true);
+  expect(needsEveryCinema(new Set(['155', '090']))).toBe(false);
+  expect(needsEveryCinema(new Set(['155', '001']))).toBe(true);
 });
 
-test('a page carries its sort, search and row in the address', () => {
-  const plain = { order: null, descending: false, text: '', page: 0, selected: 0 };
-  expect(readPage('')).toEqual({ trail: [], route: '', ui: plain });
-  expect(readPage('#/film/F1/155')).toEqual({ trail: [], route: 'film/F1/155', ui: plain });
-  const busy = { order: 3, descending: true, text: 'wick & co', page: 2, selected: 204 };
-  expect(writePage('films', busy)).toBe('#/films?sort=3&desc=1&q=wick%20%26%20co&row=205');
-  expect(readPage(writePage('films', busy))).toEqual({ trail: [], route: 'films', ui: busy });
-  // The columns view: the pages that led here come first.
-  expect(writePage('film/F1', plain, ['?row=2', 'films?sort=3'])).toBe('#/?row=2|films?sort=3|film/F1');
-  expect(readPage('#/?row=2|films?sort=3|film/F1')).toEqual({ trail: ['?row=2', 'films?sort=3'], route: 'film/F1', ui: plain });
-  expect(writePage('', plain)).toBe('#/');
-  expect(readPage('#/films?sort=x&row=0').ui).toEqual({ ...plain, order: 0 });
+test('the view is read from and written to the address', () => {
+  const view = readView('#/?cols=film,cinema,screen&film=HO1&cinema=155&order=film:rating&sort=seats&desc=1&q=imax&col=3&row=12');
+  expect(view).toEqual({
+    columns: ['film', 'cinema', 'screen'], picks: { film: 'HO1', cinema: '155' }, orders: { film: 'rating' },
+    focus: 2, row: 11, sort: 'seats', descending: true, text: 'imax',
+  });
+  expect(writeView(view)).toBe('#/?cols=film,cinema,screen&film=HO1&cinema=155&order=film:rating&sort=seats&desc=1&q=imax&col=3&row=12');
+  // The default view is a bare address; unknown columns and choices for hidden columns are dropped.
+  expect(writeView(readView('#/'))).toBe('#/');
+  expect(readView('#/?cols=film,nonsense,film&day=2026-11-20').columns).toEqual(['film']);
+  expect(readView('#/?cols=film&day=2026-11-20').picks).toEqual({});
+  expect(readView('').columns).toEqual(DEFAULT_COLUMNS);
 });
 
 test('certificates sort by age, with unrated films last', () => {
   const sorted = ['18', 'TBC', 'PG', '12A', 'U', '15', '', 'PG Ire', '15A', 'G']
     .sort((a, b) => (certificateAge(a) ?? 99) - (certificateAge(b) ?? 99));
   expect(sorted).toEqual(['U', 'G', 'PG', 'PG Ire', '12A', '15', '15A', '18', 'TBC', '']);
+});
+
+test('Greater London ticked whole is written as one word, and read back as its cinemas', () => {
+  const ticks = readChoice('?cinemas=london,001', 'cinemas');
+  expect(ticks.size).toBe(LONDON.size + 1);
+  expect(writeChoices({ cinemas: ticks })).toBe('?cinemas=london,001');
+  ticks.delete('155'); // one London cinema unticked: each is listed again
+  expect(writeChoices({ cinemas: ticks })).not.toContain('london');
+  expect(readChoice('?hidden=london', 'hidden')).toEqual(new Set(['london']));
 });

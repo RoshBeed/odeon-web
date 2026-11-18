@@ -1,76 +1,95 @@
 // The visitor's choices live in the page's address, not in the browser, so a
-// bookmark or a shared link carries them: ?cinemas=155,090&hidden=HO00012345
+// bookmark or a shared link carries them:
+//   ?cinemas=london&hidden=HO00012345&show=events      what is shown at all
+//   #/?cols=day,film,cinema&day=2026-11-20&col=2&row=5  the view and what is chosen in it
+import { FACETS, SORTS, type Facet, type Picks } from './queries';
 import { LONDON } from './tags';
 
+// Greater London's cinemas all ticked are written as one word: ?cinemas=london
+const AREA = 'london';
+
 export function readChoice(search: string, name: string): Set<string> {
-  return new Set((new URLSearchParams(search).get(name) ?? '').split(',').filter(Boolean));
+  const values = (new URLSearchParams(search).get(name) ?? '').split(',').filter(Boolean);
+  return new Set(name === 'cinemas' ? values.flatMap((value) => (value === AREA ? [...LONDON] : [value])) : values);
 }
 
 /** The query string for these choices; empty when nothing is chosen. */
 export function writeChoices(choices: Record<string, Set<string>>): string {
   const parts = Object.entries(choices)
     .filter(([, chosen]) => chosen.size)
-    .map(([name, chosen]) => `${name}=${[...chosen].map(encodeURIComponent).join(',')}`);
+    .map(([name, chosen]) => {
+      let values = [...chosen];
+      if (name === 'cinemas' && [...LONDON].every((id) => chosen.has(id))) values = [AREA, ...values.filter((id) => !LONDON.has(id))];
+      return `${name}=${values.map(encodeURIComponent).join(',')}`;
+    });
   return parts.length ? '?' + parts.join('&') : '';
 }
 
-/** Whether a page needs every cinema's showings. Greater London's alone will do
- *  while only its cinemas are ticked and the page is not about another one. */
-export function needsEveryCinema(route: string, ticks: Set<string>): boolean {
-  if (!ticks.size || [...ticks].some((id) => !LONDON.has(id))) return true;
-  const [name, a, b] = route.split('/').map(decodeURIComponent);
-  if (['cinemas', 'locations', 'location'].includes(name)) return true; // where any cinema can be ticked
-  if (['cinema', 'screen', 'show'].includes(name)) return !LONDON.has(a);
-  return name === 'film' && b !== undefined && b !== 'all' && !LONDON.has(b);
-}
+/** Whether every cinema's showings are needed, or Greater London's alone will do. */
+export const needsEveryCinema = (ticks: Set<string>) => !ticks.size || [...ticks].some((id) => !LONDON.has(id));
 
-/** Lists are drawn this many rows at a time; more follow as the reader nears the end. */
+/** Showtimes are drawn this many at a time; more follow as the reader nears the end. */
 export const PAGE = 100;
 
-/** How one page is being looked at. */
-export interface Ui {
-  /** The column sorted by, counted from 0; null for the page's own order. */
-  order: number | null;
+export const DEFAULT_COLUMNS: Facet[] = ['cinema', 'film'];
+/** How a column of choices is ordered: its own way, by how many showings, or (films) by rating. */
+export type Order = 'name' | 'count' | 'rating';
+
+export interface View {
+  /** The columns of choices, left to right. The showtimes and their details always follow. */
+  columns: Facet[];
+  picks: Picks;
+  /** Columns ordered other than their own way. */
+  orders: Partial<Record<Facet, Order>>;
+  /** The focused column, counted from 0: a column of choices, then the showtimes, then (on a phone) the details. */
+  focus: number;
+  /** The highlighted showtime, counted from 0. */
+  row: number;
+  /** The showtimes' order, and a search through them. */
+  sort: string;
   descending: boolean;
   text: string;
-  /** How many further batches of rows have been drawn. Not in the address: enough for `selected`. */
-  page: number;
-  selected: number;
 }
 
-/** A page and how it is being looked at, from the address after the `#`:
- *  `#/films?sort=3&desc=1&q=wick&row=5`. Rows count from 1 there.
- *  The columns view lists the pages that led here first, each written the same
- *  way and separated by `|`; those come back as `trail`. */
-export function readPage(hash: string): { trail: string[]; route: string; ui: Ui } {
-  const trail = hash.replace(/^#\/?/, '').split('|');
-  const [route, query = ''] = trail.pop()!.split('?');
-  const params = new URLSearchParams(query);
-  const number = (name: string, missing: number) => {
-    const value = Number(params.get(name) ?? missing);
-    return Number.isInteger(value) && value >= 0 ? value : missing;
+/** The view in the address after the `#`: `#/?cols=…`. */
+export function readView(hash: string): View {
+  const params = new URLSearchParams(hash.split('?')[1] ?? '');
+  const known = (name: string): name is Facet => (FACETS as readonly string[]).includes(name);
+  const columns = params.has('cols') ? [...new Set(params.get('cols')!.split(',').filter(known))] : [...DEFAULT_COLUMNS];
+  const picks: Picks = {};
+  for (const column of columns) if (params.get(column)) picks[column] = params.get(column)!;
+  const orders: View['orders'] = {};
+  for (const entry of (params.get('order') ?? '').split(',')) {
+    const [column, order] = entry.split(':');
+    if (known(column) && ['name', 'count', 'rating'].includes(order)) orders[column] = order as Order;
+  }
+  const whole = (name: string) => {
+    const value = Number(params.get(name) ?? 1);
+    return Number.isInteger(value) && value >= 1 ? value - 1 : 0;
   };
+  const sort = params.get('sort') ?? 'date';
   return {
-    trail,
-    route,
-    ui: {
-      order: params.has('sort') ? number('sort', 0) : null,
-      descending: params.get('desc') === '1',
-      text: params.get('q') ?? '',
-      page: Math.floor((Math.max(number('row', 1), 1) - 1) / PAGE),
-      selected: Math.max(number('row', 1), 1) - 1,
-    },
+    columns,
+    picks,
+    orders,
+    focus: Math.min(whole('col'), columns.length + 1),
+    row: whole('row'),
+    sort: SORTS.includes(sort) ? sort : 'date',
+    descending: params.get('desc') === '1',
+    text: params.get('q') ?? '',
   };
 }
 
-export const PLAIN: Ui = { order: null, descending: false, text: '', page: 0, selected: 0 };
-
-export function writePage(route: string, ui: Ui = PLAIN, trail: string[] = []): string {
+export function writeView(view: View): string {
   const parts = [
-    ui.order === null ? '' : `sort=${ui.order}`,
-    ui.descending ? 'desc=1' : '',
-    ui.text ? `q=${encodeURIComponent(ui.text)}` : '',
-    ui.selected ? `row=${ui.selected + 1}` : '',
+    view.columns.join(',') === DEFAULT_COLUMNS.join(',') ? '' : `cols=${view.columns.join(',')}`,
+    ...view.columns.map((column) => (view.picks[column] ? `${column}=${encodeURIComponent(view.picks[column]!)}` : '')),
+    Object.keys(view.orders).length ? `order=${Object.entries(view.orders).map(([column, order]) => `${column}:${order}`).join(',')}` : '',
+    view.sort === 'date' ? '' : `sort=${view.sort}`,
+    view.descending ? 'desc=1' : '',
+    view.text ? `q=${encodeURIComponent(view.text)}` : '',
+    view.focus ? `col=${view.focus + 1}` : '',
+    view.row ? `row=${view.row + 1}` : '',
   ].filter(Boolean);
-  return '#/' + [...trail, route + (parts.length ? '?' + parts.join('&') : '')].join('|');
+  return '#/' + (parts.length ? '?' + parts.join('&') : '');
 }

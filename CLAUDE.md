@@ -15,15 +15,17 @@
   run history, screen sizes). It is published as the `data` release asset, never committed.
 - Keep ODEON traffic minimal: one ingest per release week, no retry loops, and never fetch
   per-screening live data. Tests use a fake ODEON.
-- There is no server and no secret in the site. Visitor choices (ticked cinemas, hidden films)
-  live in the page's address (`?cinemas=…&hidden=…`), and so does each page's sort, search
-  and highlighted row (`#/films?sort=3&row=12`). Lists have no pages: rows are drawn 100 at a
-  time as the reader scrolls or moves down. On a wide screen the pages
-  show side by side, as Finder's column view does, and the pages that led here are listed in
-  the address, separated by `|`; `?view=pages` shows one page at a time, as phones always do.
-- `#/` is the welcome page, `#/browse` the menu (always the first column). Each thing has one
-  place: cinemas and locations in the menu, the other choices in Settings. A bookmark keeps all of it; nothing is
-  stored in the browser.
+- There is no server and no secret in the site. The site is one finder (`site/src/main.ts`):
+  columns of choices, then the showtimes, then the details. Every page the site once had is a
+  column a visitor can add (`FACETS` in `queries.ts`; `q.find` counts each column with the
+  others' choices applied). What is shown at all is in the query string
+  (`?cinemas=london&hidden=…&show=events`; Greater London ticked whole is written `london`),
+  and the view in the hash (`#/?cols=day,film,screen&film=…&order=film:rating&col=2&row=5`),
+  so a bookmark is a saved view. Nothing is stored in the browser. The default view is Cinema then
+  Film, over every cinema. On a phone one column shows at a time.
 - This repository is public. Never commit credentials; the tailnet identity and the OMDb key are
   GitHub Actions secrets.
+- `site/e2e/` holds Playwright tests that drive the built site by keys, clicks and scrolling
+  against a small set of listings (`npm run e2e`; `PW_CHANNEL=chrome` uses an installed Chrome).
+  Add one for any change to how the site is navigated.
 - Ship through a pull request and CI. The Deploy workflow publishes `main` to GitHub Pages.

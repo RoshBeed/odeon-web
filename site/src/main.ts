@@ -268,8 +268,7 @@ function render() {
   app.replaceChildren(
     h('header', {},
       h('h1', {}, h('a', { href: '#/' }, 'ODEON'), h('span', {}, ' showtimes')),
-      // Where the finder looks, at a glance, and the way to change it.
-      button(`Settings · ${where()}`, openPanel, { class: 'open-panel', 'aria-keyshortcuts': 'o', 'aria-label': `Settings: ${where()}` })),
+      button('Settings', openPanel, { class: 'open-panel', 'aria-keyshortcuts': 'o' })),
     steps,
     h('div', { class: 'columns finder' }, ...panes),
     footer(['←→ column', '↑↓ choose', 'Esc all', '/ search', 's order', '[ ] move column', 'x remove column', 'o settings',
@@ -535,7 +534,7 @@ let choosing = false;
 /** What is typed into the cinema search, kept while the drawer is redrawn. */
 let cinemaSearch = '';
 
-/** Where the finder looks, in a few words: for the header and the drawer. */
+/** Where the finder looks, in a few words, for the drawer. */
 function where(): string {
   if (!ticks.size) return 'Every cinema';
   if (londonOnly()) return 'London only';

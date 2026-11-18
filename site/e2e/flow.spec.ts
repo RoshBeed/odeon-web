@@ -133,24 +133,24 @@ test('the window holds the columns clear of the footer, and a highlighted row cl
 
 test('London only, at the top of the settings, is ?cinemas=london and loads only its listings', async ({ page }) => {
   await visit(page, '/');
-  const settings = page.locator('header .open-panel');
-  await expect(settings).toHaveText('Settings · Every cinema');
-  await settings.click();
-  await page.locator('dialog.panel').getByLabel(/London only/).check();
+  await page.locator('header .open-panel').click();
+  const london = page.locator('dialog.panel').getByLabel(/London only/);
+  await london.check();
   await expect(page).toHaveURL(/\?cinemas=london#/);
   await page.keyboard.press('Escape');
-  await expect(settings).toHaveText('Settings · London only');
   await expect(choices(page, 'Cinema')).toHaveText([/^All/, /^Holloway/, /^West End/]);
   const bookmark = page.url();
   await page.goto('about:blank'); // a fresh visit, as from the bookmark
   fetched.length = 0;
   await visit(page, bookmark);
-  await expect(settings).toHaveText('Settings · London only');
   expect(fetched).toEqual(['london.json.gz']);
   await page.keyboard.press('l'); // the key switches it off
-  await expect(settings).toHaveText('Settings · Every cinema');
+  await expect(page).not.toHaveURL(/cinemas=/);
   await expect(choices(page, 'Cinema')).toHaveText([/^All/, /^Aberdeen/, /^Holloway/, /^West End/]);
   expect(fetched).toEqual(['london.json.gz', 'listings.json.gz']); // every cinema, fetched once needed
+  await page.locator('header .open-panel').click();
+  await expect(london).not.toBeChecked();
+  await expect(page.locator('header .open-panel')).toHaveText('Settings');
 });
 
 test('event cinema and single cinemas are chosen in the settings', async ({ page }) => {

@@ -3,7 +3,7 @@ import { ics } from './calendar';
 import { needsEveryCinema, PAGE, PLAIN, readChoice, readPage, writeChoices, writePage, type Ui } from './choices';
 import { openListings } from './db';
 import * as q from './queries';
-import { certificateAge, formats, place, shortCinema, tagKind, tagLabel, type TagKind } from './tags';
+import { certificateAge, formats, LONDON, place, shortCinema, tagKind, tagLabel, type TagKind } from './tags';
 
 const BOOKING = 'https://www.odeon.co.uk/ticketing/seat-picker/?showtimeId=';
 
@@ -225,6 +225,9 @@ function welcomeView(): View {
   return { title: 'Welcome', intro, table: () => ({ columns: [], rows: [], total: 0 }), keys: { Enter: enter, ArrowRight: enter } };
 }
 
+/** Whether the ticked cinemas are Greater London's, no more and no fewer. */
+const londonOnly = () => ticks.size === LONDON.size && [...LONDON].every((id) => ticks.has(id));
+
 /** Everything there is to browse or choose, each in one place. */
 function menuView(): View {
   const rows = (): Row[] => {
@@ -236,6 +239,11 @@ function menuView(): View {
       // The finder needs room for its columns side by side.
       ...(narrow.matches ? [] : [{ cells: ['Find showtimes', '', 'choose a day, a film, a cinema and a format together'], open: 'find' }]),
       { cells: ['Films', count(home.films, 'film'), count(home.showings, 'showing')], open: 'films' },
+      // One tick for the most common choice: exactly Greater London's cinemas.
+      {
+        cells: ['London only', count(LONDON.size, 'cinema'), londonOnly() ? 'only Greater London is shown' : 'show only Greater London'],
+        tick: { state: londonOnly() ? 'all' : 'none', toggle: () => { const on = !londonOnly(); ticks.clear(); toggle(ticks, on ? [...LONDON] : [], true); } },
+      },
       { cells: ['Cinemas', count(home.allCinemas, 'cinema'), ticks.size ? `${count(ticks.size, 'cinema')} ticked` : 'all'], open: 'cinemas' },
       { cells: ['Location', count(places.size, 'location'), 'browse or tick cinema groups'], open: 'locations' },
       { cells: ['Today', count(home.tonight, 'showing'), count(home.tonightFilms, 'film')], open: 'today' },
@@ -1232,7 +1240,9 @@ function tick() {
   const row = selectedRow();
   if (!row?.tick) return;
   row.tick.toggle();
-  paint();
+  // Unticking can widen the choice past the listings downloaded so far; render() fetches the rest.
+  if (!whole && needsEveryCinema(current.route, ticks)) render();
+  else paint();
 }
 
 document.addEventListener('keydown', (event) => {

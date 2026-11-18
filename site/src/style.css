@@ -85,16 +85,30 @@ footer kbd { color: var(--accent); font: inherit; }
 .trailer img, .trailer iframe { display: block; width: 100%; height: 100%; border: 0; object-fit: cover; }
 .trailer span { position: absolute; left: 10px; bottom: 10px; padding: 4px 8px; border-radius: 3px; background: rgba(0, 0, 0, 0.75); color: #fff; }
 
-/* Columns & settings. */
-.panel { width: min(720px, calc(100vw - 24px)); max-height: calc(100dvh - 48px); background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 0 20px 20px; }
-.panel::backdrop { background: rgba(0, 0, 0, 0.6); }
-.panel-head { position: sticky; top: 0; display: flex; justify-content: space-between; align-items: center; background: var(--bg); padding: 14px 0 8px; border-bottom: 1px solid var(--line); }
+/* Settings: a drawer at the right, so the finder shows each change behind it. */
+.panel { margin: 0 0 0 auto; width: min(460px, 100vw); max-width: none; height: 100dvh; max-height: 100dvh; background: var(--bg); color: var(--text); border: 0; border-left: 1px solid var(--line); padding: 0 20px 24px; }
+.panel::backdrop { background: rgba(0, 0, 0, 0.35); }
+.panel-head { position: sticky; top: 0; z-index: 1; display: flex; justify-content: space-between; align-items: center; background: var(--bg); padding: 14px 0 10px; border-bottom: 1px solid var(--line); }
+.panel-head button { border-color: var(--accent); color: var(--accent); padding: 5px 14px; }
 .panel h2 { margin: 0; font-size: 1.1rem; }
-.panel h3 { margin: 20px 0 6px; font-size: 1rem; color: var(--accent); }
-.panel p { margin: 6px 0; }
+.panel section { padding: 6px 0 14px; border-bottom: 1px solid var(--line); }
+.panel h3 { margin: 12px 0 8px; font-size: 1rem; color: var(--accent); }
+.panel p { margin: 8px 0; }
+.panel input[type='search'] { width: 100%; padding: 6px 8px; margin: 4px 0 8px; }
+/* Where to look: three choices, one picked. */
+.options { display: grid; gap: 6px; }
+.option { display: grid; grid-template-columns: auto 1fr; column-gap: 8px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 4px; cursor: pointer; }
+.option input { grid-row: span 2; accent-color: var(--accent); margin: 3px 0 0; }
+.option.on { border-color: var(--accent); }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.chip { border-radius: 12px; padding: 3px 10px; }
 .choices { list-style: none; margin: 0; padding: 0; }
 .choices li { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 3px 0; }
-.choices li > .check { flex: 1 1 auto; }
+.choices li > .check, .choices .name { flex: 1 1 auto; min-width: 0; }
+.choices .name { display: flex; flex-direction: column; }
+.choices.shown li { flex-wrap: nowrap; padding: 5px 0; border-bottom: 1px solid var(--line); }
+.choices.shown .place { width: 2ch; text-align: right; }
+.choices.cinemas { max-height: 45vh; overflow-y: auto; }
 .choices ul { flex-basis: 100%; list-style: none; margin: 0; padding: 0 0 4px 24px; display: flex; flex-wrap: wrap; gap: 2px 16px; }
 .choices ul li { padding: 0; }
 

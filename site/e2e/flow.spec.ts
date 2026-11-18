@@ -174,8 +174,8 @@ test('a phone shows one column at a time, and a choice moves on to the next', as
   await page.setViewportSize({ width: 390, height: 800 });
   await visit(page, '/');
   await expect(page.locator('.column:visible .bar h2')).toHaveText('Day');
-  await page.locator('.column.day li', { hasText: 'All' }).first().click();
-  await page.locator('.steps button', { hasText: 'Film' }).click();
+  await page.locator('.column.day li', { hasText: 'All' }).first().click(); // All moves on too
+  await expect(page.locator('.column:visible .bar h2')).toHaveText('Film');
   await page.locator('.column.film li', { hasText: 'Dune' }).click();
   await expect(page.locator('.column:visible .bar h2')).toHaveText('Cinema');
   await page.locator('.steps button', { hasText: 'Showtimes' }).click();

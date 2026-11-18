@@ -319,7 +319,7 @@ function render() {
         item.onclick = () => {
           view.focus = index;
           choose(facet, value);
-          if (narrow.matches && value !== undefined) { view.focus = index + 1; mark(); }
+          if (narrow.matches) { view.focus = index + 1; mark(); } // on a phone any choice, All too, moves on
         };
         return value !== undefined && value === advance ? [h('li', { class: 'note' }, 'advance bookings only'), item] : [item];
       }));

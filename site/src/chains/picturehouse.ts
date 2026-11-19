@@ -33,9 +33,11 @@ export const picturehouse: Chain = {
   id: 'picturehouse',
   name: 'Picturehouse',
   booking: 'https://web.picturehouses.com/order/showtimes/{cinema}-{id}/seats',
-  // Its cinemas carry their own names ("Duke of York's", "Little Theatre Cinema"), not the chain's.
-  cinemaName: (name) => name,
-  short: (name) => name.replace(/ Picturehouse$/, '').replace(/^Picturehouse /, ''),
+  // Its cinemas are called "Arts Picturehouse", "Ritzy Picturehouse"; a few have names of
+  // their own ("Cinema City", "Little Theatre Cinema", "City Screen York").
+  cinemaName: (name) => (/Picturehouse|Cinema|Screen|Theatre/.test(name) ? name : `${name} Picturehouse`),
+  // "Picturehouse at FACT Liverpool" → "FACT Liverpool"; "Arts Picturehouse" keeps its name.
+  short: (name) => name.replace(/^Picturehouse (at )?/, ''),
   town: (cinema) => (inGreaterLondon(cinema.postcode ?? '') ? 'Greater London' : cinema.city.trim() || cinema.name),
   tag: (raw) => (raw in NAMED ? NAMED[raw] && { label: NAMED[raw]![0], kind: NAMED[raw]![1] } : { label: raw, kind: 'Events' }),
   seat: (raw) => raw,

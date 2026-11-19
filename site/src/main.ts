@@ -135,9 +135,10 @@ const cinemaNames = () => new Map(db.cinemas.map((cinema) => [cinema.id, cinema.
 /** With more than one chain, a cinema's chain, for a note beside its name: two chains may each have a West End. */
 const chainOf = (cinemaId: string) => {
   if (db.chains.size < 2) return '';
-  const chain = db.cinemas.find((cinema) => cinema.id === cinemaId)?.chain;
+  const chain = cinemaChains.get(cinemaId);
   return chain ? db.chains.get(chain)?.name ?? chain : '';
 };
+let cinemaChains = new Map<string, string>();
 let names = new Map<string, string>();
 
 const KINDS: Record<q.Facet, Kind> = {
@@ -285,6 +286,7 @@ function render() {
   }
   if (!db) return; // still downloading; load() draws the page when it arrives
   names = cinemaNames();
+  cinemaChains = new Map(db.cinemas.map((cinema) => [cinema.id, cinema.chain]));
   view = readView(location.hash);
   view.focus = Math.min(view.focus, lastColumn());
   recorded ??= { key: location.search + writeView({ ...view, focus: 0, row: 0 }), href: location.search + location.hash }; // where undo stops

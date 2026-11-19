@@ -27,7 +27,9 @@ test("Picturehouse's cut-short codes are named in full", () => {
   expect(read(picturehouse, '35mm')).toEqual(['35mm', 'Picture']);
   expect(['2D', 'ad-trailer', 'Upstairs'].map((raw) => picturehouse.tag(raw))).toEqual([null, null, null]);
   expect(picturehouse.isEvent({ title: 'NT Live', tags: ['LiveSat'] })).toBe(true);
-  expect([picturehouse.cinemaName("Duke of York's"), picturehouse.short('Picturehouse Central')]).toEqual(["Duke of York's", 'Central']);
+  expect(['Arts', 'Cinema City', 'Picturehouse Central'].map(picturehouse.cinemaName)).toEqual(['Arts Picturehouse', 'Cinema City', 'Picturehouse Central']);
+  expect(picturehouse.short('Picturehouse Central')).toBe('Central');
+  expect(['Picturehouse at FACT Liverpool', 'Arts Picturehouse'].map(picturehouse.short)).toEqual(['FACT Liverpool', 'Arts Picturehouse']);
 });
 
 test("a showing is booked on its chain's page, with the chain's own cinema and showing IDs", () => {

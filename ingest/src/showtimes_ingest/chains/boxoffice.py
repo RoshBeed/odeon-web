@@ -171,7 +171,7 @@ def screening_rows(cinema, film_id, day, shows):
     return rows
 
 
-def collect(client, today):
+def collect(client, today, known=None):
     """Every cinema, and everything showing at the open ones from today for three months."""
     cinemas = [
         cinema

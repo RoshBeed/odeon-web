@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
-# One chain's turn in the Ingest workflow, for chains fetched with plain requests
-# (no captured token, no tailnet): check whether it is due, ingest, rate the
-# films, and publish its file if it changed. Prints changed=true when it did.
-#   ingest-chain.sh <chain> check|run
+# One chain's turn in the Ingest workflow's `chains` job: check whether it is due,
+# ingest, rate the films, and publish its file if it changed. Prints changed=true
+# when it did. With VIA set (scripts/via-tailnet.sh), the fetch alone goes through
+# it, and only when the chain is due.
+#   [VIA=…] ingest-chain.sh <chain> check|run
 # Needs: data/<chain>.sqlite downloaded first (scripts/listings.sh download),
 # uv, gh signed in, and OMDB_API_KEY for the ratings (optional).
 set -euo pipefail
@@ -16,7 +17,7 @@ cd ingest
 # One attempt: a failure is recorded in the chain's file and the next hourly
 # check tries again, up to three times a week.
 if [ "$command" = run ] || uv run showtimes-ingest "$chain" due; then
-  uv run showtimes-ingest "$chain" "$command" || status=$?
+  ${VIA:+"$VIA"} uv run showtimes-ingest "$chain" "$command" || status=$?
 fi
 uv run showtimes-ingest "$chain" ratings || status=$?
 cd ..

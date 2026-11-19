@@ -33,7 +33,7 @@ export interface Chain {
   /** `odeon`; every ID it exports starts `odeon-`. */
   id: string;
   name: string;
-  /** The page that books a showing, with `{id}` for the showing's ID. */
+  /** The page that books a showing, with `{id}` for the showing's ID and `{cinema}` for its cinema's. */
   booking: string;
   ingested: string | null;
   fullUntil: string | null;
@@ -309,7 +309,10 @@ export function showing(l: Listings, cinemaId: string, id: string): ShowingDetai
 export function booking(l: Listings, show: { cinemaId: string; id: string }): string | null {
   const cinema = l.cinemas.find((each) => each.id === show.cinemaId);
   const chain = cinema && l.chains.get(cinema.chain);
-  return chain ? chain.booking.replace('{id}', encodeURIComponent(show.id)) : null;
+  if (!chain) return null;
+  // The chain's own IDs, each part of one kept apart: Vue's showing is film/session.
+  const own = (id: string) => id.split('/').map(encodeURIComponent).join('/');
+  return chain.booking.replace('{cinema}', own(show.cinemaId.slice(chain.id.length + 1))).replace('{id}', own(show.id));
 }
 
 /** Titles of the given films, for listing what a visitor has hidden. */

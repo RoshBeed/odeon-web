@@ -126,7 +126,8 @@ export function exportListings(sources: Source[], only?: Set<string>): Data {
       const named = raw.flatMap((tag) => {
         const reading = chain.tag(tag);
         if (!reading) return [];
-        tags[reading.label] = reading.kind;
+        // Two chains may file one name differently: the more telling kind wins over Events.
+        if (!tags[reading.label] || tags[reading.label] === 'Events') tags[reading.label] = reading.kind;
         return [reading.label];
       });
       const seats = [...new Set((JSON.parse(seating) as string[]).map((seat) => chain.seat(seat)).filter((seat): seat is string => seat !== null))];

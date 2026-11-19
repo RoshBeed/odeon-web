@@ -84,10 +84,15 @@ jobs:
         if: always()
         run: gh workflow enable ingest.yml
   chains:
-    # The chains fetched with plain requests: Everyman and Showcase (Webedia's
-    # boxoffice platform). One after another; one failing does not stop the next.
+    # The other chains, one after another; one failing does not stop the next.
+    # Everyman and Showcase (Webedia's boxoffice platform) answer plain requests;
+    # Vue and Picturehouse are read through a real browser, as ODEON is, with its
+    # traffic through the owner's tailnet.
     # CHAINS_INGEST=false pauses them; they can still be started by hand.
-    if: github.ref == 'refs/heads/main' && (vars.CHAINS_INGEST != 'false' || github.event_name == 'workflow_dispatch')
+    # After ODEON's job, whatever became of it: the tailnet identity is one device,
+    # which cannot be connected from two runners at once.
+    needs: ingest
+    if: always() && github.ref == 'refs/heads/main' && (vars.CHAINS_INGEST != 'false' || github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-latest
     outputs:
       changed: ${{ steps.chains.outputs.changed }}
@@ -95,6 +100,8 @@ jobs:
       GH_TOKEN: ${{ github.token }}
       COMMAND: ${{ inputs.command || 'check' }}
       OMDB_API_KEY: ${{ secrets.OMDB_API_KEY }}
+      TAILSCALE_EXIT_NODE: ${{ vars.TAILSCALE_EXIT_NODE }}
+      TAILSCALE_STATE: ${{ secrets.TAILSCALE_STATE }}
     steps:
       - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v10.3.3
@@ -102,13 +109,17 @@ jobs:
         working-directory: ingest
       - name: Fetch the stored listings
         run: bash scripts/listings.sh download
+      - name: Install the browser the browser-read chains use
+        working-directory: ingest
+        run: uv run playwright install --with-deps webkit
       - name: Ingest each chain
         id: chains
         run: |
           failed=0
-          for chain in everyman showcase; do
+          for chain in everyman showcase vue picturehouse; do
             echo "::group::$chain"
-            bash scripts/ingest-chain.sh "$chain" "$COMMAND" | tee "$RUNNER_TEMP/$chain.out" || failed=1
+            case "$chain" in vue|picturehouse) via="$PWD/scripts/via-tailnet.sh" ;; *) via= ;; esac
+            VIA="$via" bash scripts/ingest-chain.sh "$chain" "$COMMAND" | tee "$RUNNER_TEMP/$chain.out" || failed=1
             echo "::endgroup::"
             if grep -q '^changed=true$' "$RUNNER_TEMP/$chain.out"; then echo "changed=true" >> "$GITHUB_OUTPUT"; fi
           done

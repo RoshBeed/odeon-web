@@ -8,7 +8,7 @@ export interface Chain {
   id: string;
   /** For people: `ODEON`. */
   name: string;
-  /** The page that books a showing, with `{id}` for the showing's own ID. */
+  /** The page that books a showing, with `{id}` for the showing's own ID and `{cinema}` for its cinema's. */
   booking: string;
   /** A cinema's name in full, from its stored name: `London West End` → `ODEON London West End`. */
   cinemaName(name: string): string;

@@ -3,10 +3,13 @@ seat layouts): once a week, when the chain has published the week's last day,
 fetch everything and replace its listings.
 
 A chain package passes its name and two functions:
-    collect(client, today) -> {"cinemas", "films", "availability", "screenings"}
-        in the shared schema (store.write)
+    collect(client, today, known) -> {"cinemas", "films", "availability", "screenings"}
+        in the shared schema (store.write); `known` is the cinemas already
+        stored, by ID, for what is fetched once and kept (an address)
     published(client, day) -> whether any showing on that day is listed yet
 """
+
+import json
 
 from showtimes_ingest.log import log
 from showtimes_ingest.store import (
@@ -28,7 +31,13 @@ def ingest(path, name, collect, client, today=None):
     today = today or now().date()
     tuesday, last_day = release_week(today)
     try:
-        data = collect(client, today)
+        with connect(path) as db:
+            columns = ("id", "name", "stored", "address", "latitude", "longitude")
+            known = {
+                row[0]: dict(zip(columns, row), address=json.loads(row[3]))
+                for row in db.execute(f"SELECT {', '.join(columns)} FROM cinemas")
+            }
+        data = collect(client, today, known)
         with connect(path) as db:
             write(db, data)
             # The week counts as stored once its last day is.

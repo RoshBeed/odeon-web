@@ -295,7 +295,7 @@ class DatabaseTests(unittest.TestCase):
 
 class ChainsTest(unittest.TestCase):
     def test_each_chain_offers_what_the_command_line_and_ratings_use(self):
-        self.assertEqual(sorted(CHAINS), ["odeon"])
+        self.assertEqual(sorted(CHAINS), ["everyman", "odeon", "showcase"])
         for chain in CHAINS.values():
             for name in ("NAME", "check", "ingest", "settled_reason", "search_title"):
                 self.assertTrue(hasattr(chain, name), f"{chain.NAME} lacks {name}")

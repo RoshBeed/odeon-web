@@ -1,24 +1,16 @@
 """Fetch one week's listings from ODEON and shape them for the site."""
 
 import os
-from datetime import datetime, timedelta, timezone
-from zoneinfo import ZoneInfo
+from datetime import datetime
 
 from showtimes_ingest.store import utc
-
-TZ = ZoneInfo("Europe/London")
+from showtimes_ingest.week import TZ, now, release_week  # noqa: F401  (ODEON's run imports them from here)
 
 
 def configured_sites():
     """An explicit limit on which cinemas are stored, or None for every cinema."""
     configured = os.environ.get("ODEON_CINEMAS", "")
     return set(configured.replace(",", " ").split()) or None
-
-
-def release_week(today):
-    """ODEON publishes Friday–Thursday listings on Tuesdays: (Tuesday, Thursday)."""
-    tuesday = today - timedelta(days=(today.weekday() - 1) % 7)
-    return tuesday, tuesday + timedelta(days=9)
 
 
 def text(value):
@@ -170,7 +162,3 @@ def collect(api, today):
         "availability": availability,
         "screenings": screenings,
     }
-
-
-def now():
-    return datetime.now(timezone.utc).astimezone(TZ)

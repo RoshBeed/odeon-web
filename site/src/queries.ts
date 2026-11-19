@@ -156,8 +156,9 @@ export interface Showing {
   endsAt: string | null;
   title: string;
   cinema: string;
-  /** The cinema's short name. */
+  /** The cinema's short name, and its chain's ID. */
   short: string;
+  chain: string;
   screen: string;
   capacity: number | null;
   experiences: string[];
@@ -239,6 +240,7 @@ const SHOWING_ORDERS: Record<string, (sign: number) => (a: Show, b: Show) => num
   time: (sign) => (a, b) => sign * order(a.time, b.time),
   film: (sign) => (a, b) => sign * order(a.title, b.title),
   cinema: (sign) => (a, b) => sign * order(a.place, b.place),
+  chain: (sign) => (a, b) => sign * order(a.cinema?.chain ?? '', b.cinema?.chain ?? '') || order(a.startsAt, b.startsAt),
   // Numbered screens come before named ones, in number order.
   screen: (sign) => (a, b) => {
     const [[nameA, numberA], [nameB, numberB]] = [screenName(a), screenName(b)];
@@ -255,7 +257,7 @@ const SHOWING_ORDERS: Record<string, (sign: number) => (a: Show, b: Show) => num
 
 const asShowing = (show: Show): Showing => ({
   cinemaId: show.cinemaId, id: show.id, filmId: show.filmId, date: show.date, startsAt: show.startsAt,
-  time: show.time, endsAt: show.filmEndsAt, title: show.film!.title, cinema: show.cinema!.name, short: show.cinema!.short, screen: show.screen,
+  time: show.time, endsAt: show.filmEndsAt, title: show.film!.title, cinema: show.cinema!.name, short: show.cinema!.short, chain: show.cinema!.chain, screen: show.screen,
   capacity: show.capacity, experiences: show.experiences, soldOut: show.soldOut,
 });
 
@@ -297,7 +299,7 @@ export function showing(l: Listings, cinemaId: string, id: string): ShowingDetai
   if (!show?.film || !show.cinema) return null;
   return {
     cinemaId, id, filmId: show.filmId, date: show.date, startsAt: show.startsAt, time: show.time, endsAt: show.filmEndsAt,
-    title: show.film.title, cinema: show.cinema.name, short: show.cinema.short, screen: show.screen, capacity: show.capacity,
+    title: show.film.title, cinema: show.cinema.name, short: show.cinema.short, chain: show.cinema.chain, screen: show.screen, capacity: show.capacity,
     experiences: show.experiences, soldOut: show.soldOut, filmStartsAt: show.filmStartsAt,
     filmEndsAt: show.filmEndsAt, runtime: show.film.runtime, seating: show.seating, address: show.cinema.address,
   };
@@ -325,7 +327,7 @@ export function titles(l: Listings, ids: string[]): { id: string; title: string 
 /** The columns a visitor can choose to show: what a showing can be chosen by. */
 export const FACETS = [
   'day', 'film', 'cinema', 'location', 'picture', 'language', 'access', 'event', 'seat',
-  'screen', 'cert', 'genre', 'person', 'distributor', 'release',
+  'screen', 'cert', 'genre', 'person', 'distributor', 'release', 'chain',
 ] as const;
 export type Facet = (typeof FACETS)[number];
 /** One choice per column; a column left out means all. */
@@ -356,6 +358,7 @@ function keyer(facet: Facet, today: string): (show: Show) => string[] {
     case 'person': return (show) => [...new Set(show.film?.people.map((person) => person.name))];
     case 'distributor': return (show) => (show.film?.distributor ? [show.film.distributor] : []);
     case 'release': return (show) => [show.film?.release && show.film.release > today ? 'soon' : 'out'];
+    case 'chain': return (show) => (show.cinema ? [show.cinema.chain] : []);
   }
 }
 function keysOf(l: Listings, facet: Facet, today: string): string[][] {

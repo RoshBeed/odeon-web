@@ -92,7 +92,7 @@ export function exportListings(sources: Source[], only?: Set<string>): Data {
       const parsed = Object.fromEntries(Object.entries(JSON.parse(address) as Record<string, string>).map(([part, text]) => [part, String(text).trim()]));
       cinemas.push({
         id: own(chain, id), chain: chain.id, name: chain.cinemaName(name), short: chain.short(name),
-        town: chain.town({ id, name, city: parsed.city ?? '' }), stored: Boolean(stored), address: parsed,
+        town: chain.town({ id, name, city: parsed.city ?? '', postcode: parsed.postcode }), stored: Boolean(stored), address: parsed,
       });
     }
     for (const [cinema, id] of read(sqlite, 'SELECT cinema_id, film_id FROM availability')) {
@@ -117,7 +117,7 @@ export function exportListings(sources: Source[], only?: Set<string>): Data {
         tags[reading.label] = reading.kind;
         return [reading.label];
       });
-      const seats = [...new Set((JSON.parse(seating) as string[]).map((seat) => chain.seat(seat)))];
+      const seats = [...new Set((JSON.parse(seating) as string[]).map((seat) => chain.seat(seat)).filter((seat): seat is string => seat !== null))];
       rows.push([`${startsAt} ${own(chain, cinema)} ${id}`, [
         own(chain, cinema), id, film(chain, filmId), date, startsAt, time, filmStartsAt, filmEndsAt, screen, screenId,
         [...new Set(named)], seats, soldOut,

@@ -280,6 +280,31 @@ class DatabaseTests(unittest.TestCase):
             [("F1", "imdb", 8.4, "tt1"), ("F1", "metacritic", 74.0, None)],
         )
 
+    def test_venue_scoped_copies_share_a_ratings_lookup(self):
+        run.ingest(self.path, TODAY, FakeAPI())
+        with connect(self.path) as db:
+            db.execute("DELETE FROM availability WHERE film_id != 'F1'")
+            db.execute(
+                "INSERT INTO films SELECT 'copy', title, runtime, certificate, release_date, genres, people, distributor, synopsis, trailer_url FROM films WHERE id = 'F1'"
+            )
+            db.execute(
+                "INSERT INTO availability VALUES ('155', 'copy', '[\"NowShowing\"]')"
+            )
+        with (
+            patch.object(
+                OMDb,
+                "lookup",
+                return_value={"imdb_id": "tt1", "imdb": 8.0, "metacritic": 74.0},
+            ) as lookup,
+            patch.object(IMDbRatings, "ratings_for", return_value={}),
+        ):
+            ratings.ingest_ratings(odeon, self.path, key="k")
+        self.assertEqual(lookup.call_count, 1)
+        self.assertEqual(
+            self.rows("SELECT count(*) FROM ratings WHERE film_id IN ('F1', 'copy')"),
+            [(4,)],
+        )
+
     def test_ratings_ingest_stops_on_a_rejected_key(self):
         run.ingest(self.path, TODAY, FakeAPI())
 
@@ -295,7 +320,26 @@ class DatabaseTests(unittest.TestCase):
 
 class ChainsTest(unittest.TestCase):
     def test_each_chain_offers_what_the_command_line_and_ratings_use(self):
-        self.assertEqual(sorted(CHAINS), ["odeon"])
+        self.assertEqual(
+            sorted(CHAINS),
+            [
+                "actone",
+                "cineworld",
+                "curzon",
+                "everyman",
+                "lexi",
+                "light",
+                "odeon",
+                "olympic",
+                "phoenix",
+                "picturehouse",
+                "princecharles",
+                "reel",
+                "rio",
+                "showcase",
+                "vue",
+            ],
+        )
         for chain in CHAINS.values():
             for name in ("NAME", "check", "ingest", "settled_reason", "search_title"):
                 self.assertTrue(hasattr(chain, name), f"{chain.NAME} lacks {name}")

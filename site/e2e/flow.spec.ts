@@ -373,3 +373,27 @@ test('a phone shows one column at a time, and a choice moves on to the next', as
   await expect(page.locator('.showtimes li.heads')).toHaveText(/^Day.*Seats ▲$/);
   await expect.poll(wider).toBe(0);
 });
+
+test('more than one chain: films shared, a Chain column, each cinema marked and booked with its own chain', async ({ page }) => {
+  const two = listings(true);
+  await page.route('**/data/*.json.gz', (route) => route.fulfill({ contentType: 'application/json', body: route.request().url().includes('london') ? two.london : two.all }));
+  await visit(page, '/#cols=chain,cinema,film');
+  await expect(choices(page, 'Chain')).toHaveText([/^All/, /^Everyman\s*2$/, /^ODEON\s*254$/]);
+  await expect(page.locator('.column.cinema li.heads')).toHaveText(/chain/);
+  await expect(choices(page, 'Cinema').filter({ hasText: 'Hampstead' })).toHaveText(/Hampstead\s*Everyman\s*1/);
+  // Dune at Everyman is the same film as ODEON's Dune.
+  await expect(choices(page, 'Film').filter({ hasText: /^Dune/ })).toHaveText(/^Dune\s*★8.4\s*4$/);
+  await page.keyboard.press('j'); // Everyman
+  await page.keyboard.press('$'); // the showtimes, the first highlighted
+  await expect(page.locator('.column.details .actions a').first()).toHaveText('Book on everymancinema.com');
+  await expect(page.locator('.column.details .actions a').first()).toHaveAttribute('href', 'https://purchase.everymancinema.com/launch/ticketing/uuid-1');
+  await expect(page.locator('.column.details')).toContainText('Laser');
+  // Greater London is known by postcode for chains that do not list it themselves.
+  await ex(page, 'set london');
+  await expect(choices(page, 'Cinema')).toHaveText([/^All/, /^Hampstead/]); // Everyman is still chosen
+  await page.keyboard.press('0');
+  await page.keyboard.press('g');
+  await page.keyboard.press('g'); // every chain again
+  await expect(choices(page, 'Cinema')).toHaveText([/^All/, /^Hampstead/, /^Holloway/, /^West End/]);
+});
+

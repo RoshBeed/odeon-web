@@ -46,7 +46,7 @@ export const PAGE = 100;
 
 export const DEFAULT_COLUMNS: Facet[] = ['cinema', 'film'];
 /** What each showtime may show besides its time and film, in the order they are shown. */
-export const FIELDS = ['ends', 'picture', 'language', 'access', 'cert', 'cinema', 'screen', 'seats'] as const;
+export const FIELDS = ['ends', 'picture', 'language', 'access', 'cert', 'chain', 'cinema', 'screen', 'seats'] as const;
 export type Field = (typeof FIELDS)[number];
 export const DEFAULT_FIELDS: Field[] = ['picture', 'cinema', 'screen', 'seats'];
 /** How a column of choices is ordered: its own way, by how many showings, or (films) by rating. */

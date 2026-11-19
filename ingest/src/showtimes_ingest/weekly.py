@@ -10,6 +10,7 @@ A chain package passes its name and two functions:
 """
 
 import json
+from datetime import datetime
 
 from showtimes_ingest.log import log
 from showtimes_ingest.store import (
@@ -22,7 +23,7 @@ from showtimes_ingest.store import (
     start_run,
     write,
 )
-from showtimes_ingest.week import now, release_week
+from showtimes_ingest.week import TZ, now, release_week
 
 
 def ingest(path, name, collect, client, today=None):
@@ -77,6 +78,24 @@ def settled_reason(path, name, today=None):
         log.warning("%s paused after %d failures; run it manually", name, MAX_FAILURES)
         return "paused"
     return None
+
+
+def programme_settled_reason(path, name, today=None):
+    """Repertory venues publish a rolling programme, not one Thursday's release.
+    One successful complete collection per week suffices even without a showing
+    on that Thursday. It does not claim that a particular date is fully released.
+    """
+    today = today or now().date()
+    reason = settled_reason(path, name, today)
+    if reason:
+        return reason
+    last = last_success(path, name)
+    tuesday, _ = release_week(today)
+    return (
+        "done"
+        if last and datetime.fromisoformat(last).astimezone(TZ).date() >= tuesday
+        else None
+    )
 
 
 def check(path, name, collect, published, client, moment=None):

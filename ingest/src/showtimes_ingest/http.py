@@ -24,7 +24,9 @@ class Client:
 
     def url(self, path, params=()):
         query = urllib.parse.urlencode(list(params), doseq=True)
-        return f"{self.base}{path}" + (f"?{query}" if query else "")
+        return urllib.parse.urljoin(self.base + "/", path) + (
+            f"?{query}" if query else ""
+        )
 
     def get(self, path, params=(), headers=None):
         """The JSON a GET returns."""
@@ -52,7 +54,11 @@ class Client:
         self.requests += 1
         try:
             with urllib.request.urlopen(request, timeout=self.timeout) as response:
-                body = response.read().decode("utf-8")
+                encoding = response.headers.get_content_charset() or "utf-8"
+                # HTML's legacy Latin-1 label is read as Windows-1252 by browsers.
+                if raw and encoding.lower() in ("iso-8859-1", "latin1", "latin-1"):
+                    encoding = "windows-1252"
+                body = response.read().decode(encoding)
         except urllib.error.HTTPError as error:
             raise RuntimeError(f"HTTP {error.code} from {request.full_url}") from None
         except (urllib.error.URLError, TimeoutError) as error:

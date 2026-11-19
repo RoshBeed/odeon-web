@@ -27,6 +27,8 @@ export interface Data {
   values: unknown[];
   /** Each tag a showing may have, and its kind. */
   tags: Record<string, TagKind>;
+  /** Published exceptions to a chain's booking template; null means no booking link. */
+  bookingLinks?: Record<string, string | null>;
 }
 
 export interface Chain {
@@ -35,6 +37,7 @@ export interface Chain {
   name: string;
   /** The page that books a showing, with `{id}` for the showing's ID and `{cinema}` for its cinema's. */
   booking: string;
+  bookingByCinema?: Record<string, string>;
   ingested: string | null;
   fullUntil: string | null;
 }
@@ -81,6 +84,7 @@ interface Show {
 }
 
 export interface Listings {
+  bookingLinks: Record<string, string | null>;
   chains: Map<string, Chain>;
   ingested: string | null;
   fullUntil: string | null;
@@ -123,6 +127,7 @@ export function open(data: Data): Listings {
     };
   });
   return {
+    bookingLinks: data.bookingLinks ?? {},
     chains: new Map(data.chains.map((chain) => [chain.id, chain])),
     ingested: data.ingested,
     fullUntil: data.fullUntil,
@@ -317,12 +322,16 @@ export function showing(l: Listings, cinemaId: string, id: string): ShowingDetai
 
 /** The page that books a showing on its chain's site. */
 export function booking(l: Listings, show: { cinemaId: string; id: string }): string | null {
+  const key = JSON.stringify([show.cinemaId, show.id]);
+  if (Object.hasOwn(l.bookingLinks, key)) return l.bookingLinks[key];
   const cinema = l.cinemas.find((each) => each.id === show.cinemaId);
   const chain = cinema && l.chains.get(cinema.chain);
   if (!chain) return null;
   // The chain's own IDs, each part of one kept apart: Vue's showing is film/session.
   const own = (id: string) => id.split('/').map(encodeURIComponent).join('/');
-  return chain.booking.replace('{cinema}', own(show.cinemaId.slice(chain.id.length + 1))).replace('{id}', own(show.id));
+  const id = show.cinemaId.slice(chain.id.length + 1);
+  const template = chain.bookingByCinema?.[id] ?? chain.booking;
+  return template ? template.replace('{cinema}', own(id)).replace('{id}', own(show.id)) : null;
 }
 
 /** Titles of the given films, for listing what a visitor has hidden. */

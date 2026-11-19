@@ -34,9 +34,8 @@ jobs:
       COMMAND: ${{ inputs.command || 'check' }}
     steps:
       - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v10.3.3
-      - run: uv sync --locked --no-dev
-        working-directory: ingest
+      - name: Build the ingest container
+        run: docker build -f ingest/Dockerfile -t showtimes-ingest .
       - name: Fetch the stored listings
         # Starting from last week's file keeps the screen sizes already
         # fetched, and records which release week is stored.
@@ -45,26 +44,19 @@ jobs:
           sha256sum "$SHOWTIMES_DATABASE" > "$RUNNER_TEMP/before" || true
       - name: Would this contact the chain?
         id: due
-        working-directory: ingest
         run: |
-          if [ "$COMMAND" = run ] || uv run showtimes-ingest "$CHAIN" due; then echo "due=true" >> "$GITHUB_OUTPUT"; fi
-      - name: Install the browser that captures ODEON's token
-        if: steps.due.outputs.due == 'true'
-        working-directory: ingest
-        run: uv run playwright install --with-deps webkit
+          if [ "$COMMAND" = run ] || bash scripts/ingest.sh "$CHAIN" due; then echo "due=true" >> "$GITHUB_OUTPUT"; fi
       - name: Ingest the listings
         # One attempt: a failure is recorded in the file and the next hourly
         # check tries again, up to three times a week. ODEON refuses cloud
         # addresses, so its traffic goes through the owner's tailnet.
         if: steps.due.outputs.due == 'true'
-        working-directory: ingest
-        run: ../scripts/via-tailnet.sh uv run showtimes-ingest "$CHAIN" "$COMMAND"
+        run: bash scripts/via-tailnet.sh bash scripts/ingest.sh "$CHAIN" "$COMMAND"
         env:
           TAILSCALE_EXIT_NODE: ${{ vars.TAILSCALE_EXIT_NODE }}
           TAILSCALE_STATE: ${{ secrets.TAILSCALE_STATE }}
       - name: Ingest the ratings
-        working-directory: ingest
-        run: uv run showtimes-ingest "$CHAIN" ratings
+        run: bash scripts/ingest.sh "$CHAIN" ratings
         env:
           OMDB_API_KEY: ${{ secrets.OMDB_API_KEY }}
       - name: Publish the listings
@@ -104,19 +96,15 @@ jobs:
       TAILSCALE_STATE: ${{ secrets.TAILSCALE_STATE }}
     steps:
       - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v10.3.3
-      - run: uv sync --locked --no-dev
-        working-directory: ingest
+      - name: Build the ingest container
+        run: docker build -f ingest/Dockerfile -t showtimes-ingest .
       - name: Fetch the stored listings
         run: bash scripts/listings.sh download
-      - name: Install the browser the browser-read chains use
-        working-directory: ingest
-        run: uv run playwright install --with-deps webkit
       - name: Ingest each chain
         id: chains
         run: |
           failed=0
-          for chain in everyman showcase vue picturehouse; do
+          for chain in everyman showcase vue picturehouse cineworld curzon light olympic reel princecharles rio lexi phoenix actone; do
             echo "::group::$chain"
             case "$chain" in vue|picturehouse) via="$PWD/scripts/via-tailnet.sh" ;; *) via= ;; esac
             VIA="$via" bash scripts/ingest-chain.sh "$chain" "$COMMAND" | tee "$RUNNER_TEMP/$chain.out" || failed=1

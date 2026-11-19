@@ -55,7 +55,7 @@ export function boxOffice(chain: { id: string; name: string; booking: string }):
     ...chain,
     cinemaName: (name) => `${chain.name} ${name}`,
     short: (name) => name,
-    town: (cinema) => (inGreaterLondon(cinema.postcode ?? '') ? 'Greater London' : cinema.city.trim() || cinema.name),
+    town: (cinema) => (inGreaterLondon(cinema.postcode ?? '', cinema.city) ? 'Greater London' : cinema.city.trim() || cinema.name),
     tag: readTag,
     seat: (raw) => (raw === 'Auditorium.Comfort.Recliners' ? 'Recliner' : null),
     distributor: (raw) => raw,

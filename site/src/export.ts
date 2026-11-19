@@ -49,7 +49,7 @@ export function exportListings(sources: Source[], only?: Set<string>): Data {
        LEFT JOIN ratings mc ON mc.film_id = f.id AND mc.source = 'metacritic'
        ORDER BY f.id`,
     ).map(([id, title, runtime, certificate, release, genres, people, distributor, synopsis, trailer, imdb, imdbId, metacritic]): Film => ({
-      id: own(chain, id), title, runtime, certificate, release, synopsis, trailer, imdb, imdbId, metacritic,
+      id: own(chain, id), title: chain.filmTitle?.(title) ?? title, runtime, certificate, release, synopsis, trailer, imdb, imdbId, metacritic,
       distributor: chain.distributor(distributor),
       genres: (JSON.parse(genres) as string[]).map((name) => name.trim()),
       people: JSON.parse(people),
@@ -88,14 +88,22 @@ export function exportListings(sources: Source[], only?: Set<string>): Data {
   const availability: Data['availability'] = [];
   const screens: Data['screens'] = [];
   const tags: Record<string, TagKind> = {};
+  const bookingLinks: Record<string, string | null> = {};
   const events = new Set<string>();
   const rows: [string, unknown[]][] = [];
   for (const { chain, sqlite } of sources) {
     const state = new Map(read(sqlite, 'SELECT key, value FROM state') as unknown as [string, string][]);
+    // Old cached chain files remain readable until their next normal ingest.
+    if (read(sqlite, "SELECT name FROM sqlite_master WHERE name = 'screening_links'").length) {
+      for (const [cinema, id, url] of read(sqlite, 'SELECT cinema_id, screening_id, url FROM screening_links')) {
+        if (!only || only.has(own(chain, cinema))) bookingLinks[JSON.stringify([own(chain, cinema), id])] = url;
+      }
+    }
     chains.push({
       id: chain.id,
       name: chain.name,
       booking: chain.booking,
+      bookingByCinema: chain.bookingByCinema,
       ingested: read(sqlite, `SELECT max(finished_at) FROM runs WHERE source = '${chain.id}' AND status = 'ok'`)[0][0],
       fullUntil: chain.fullUntil(state),
     });
@@ -151,6 +159,7 @@ export function exportListings(sources: Source[], only?: Set<string>): Data {
     events: [...events],
     screens,
     tags,
+    bookingLinks,
     rows: rows.map(([, row]) => row.map(number)),
     values,
   };

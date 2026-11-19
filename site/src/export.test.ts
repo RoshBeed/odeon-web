@@ -3,6 +3,9 @@ import { DatabaseSync } from 'node:sqlite';
 import { expect, test } from 'vitest';
 import { everyman } from './chains/boxoffice';
 import { odeon } from './chains/odeon';
+import { olympic } from './chains/olympic';
+import { reel } from './chains/reel';
+import * as q from './queries';
 import { exportListings } from './export';
 
 const store = readFileSync(new URL('../../ingest/src/showtimes_ingest/store.py', import.meta.url), 'utf8');
@@ -31,4 +34,30 @@ test("a film two chains list is one film, with the busier listing's own details 
   const filmIds = new Set(data.rows.map((row) => data.values[row[2]]));
   expect([...filmIds]).toEqual(['everyman-6272']); // both chains' showings point at it
   expect(data.chains.map((each) => each.id)).toEqual(['odeon', 'everyman']);
+});
+
+test('the export preserves different ticketing hosts for cinemas in one group', () => {
+  const data = exportListings([{ chain: olympic, sqlite: chain('barnes', ['a-film', 'A Film', null, ''], 1) }]);
+  expect(q.booking(q.open(data), { cinemaId: 'olympic-barnes', id: '123/subtitled' })).toBe('https://web1.empire.mycloudcinema.com/#/book/123/subtitled');
+});
+
+test('published external and unavailable booking links survive export; older files remain readable', () => {
+  const sqlite = chain('barnes', ['a-film', 'A Film', null, ''], 2);
+  sqlite.exec("INSERT INTO screening_links VALUES ('barnes', 's0', 'https://tickets.example/s0'), ('barnes', 's1', NULL)");
+  const listings = q.open(exportListings([{ chain: olympic, sqlite }]));
+  expect(q.booking(listings, { cinemaId: 'olympic-barnes', id: 's0' })).toBe('https://tickets.example/s0');
+  expect(q.booking(listings, { cinemaId: 'olympic-barnes', id: 's1' })).toBeNull();
+  sqlite.exec('DROP TABLE screening_links');
+  const older = q.open(exportListings([{ chain: olympic, sqlite }]));
+  expect(q.booking(older, { cinemaId: 'olympic-barnes', id: 's0' })).toBe('https://web1.empire.mycloudcinema.com/#/book/s0');
+});
+
+test('screening labels in a provider title do not create a duplicate film', () => {
+  const sqlite = chain('hull', ['a', 'A Film - Subtitled Screening', null, ''], 1);
+  sqlite.exec("INSERT INTO films SELECT 'b', 'A Film', runtime, certificate, release_date, genres, people, distributor, synopsis, trailer_url FROM films WHERE id = 'a'");
+  sqlite.exec("INSERT INTO screenings SELECT cinema_id, 'other', 'b', business_date, starts_at, time, film_starts_at, film_ends_at, screen, screen_id, experiences, seating, sold_out FROM screenings LIMIT 1");
+  const data = exportListings([{ chain: reel, sqlite }]);
+  expect(data.films.map((film) => film.title)).toEqual(['A Film']);
+  expect(data.rows).toHaveLength(2);
+  expect(q.booking(q.open(data), { cinemaId: 'reel-hull', id: '123/a-film' })).toBe('https://hull.reelcinemas.co.uk/hull/booking/123/a-film');
 });

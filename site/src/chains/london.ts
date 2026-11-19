@@ -18,7 +18,9 @@ const OUTER: Record<string, number[]> = {
   TN: [16],
 };
 
-export function inGreaterLondon(postcode: string): boolean {
+export function inGreaterLondon(postcode: string, city = ''): boolean {
+  // Some chain directories explicitly say London while leaving the postcode empty.
+  if (/^(greater )?london$/i.test(city.trim())) return true;
   const match = /^([A-Z]{1,2})(\d{1,2})[A-Z]?\b/.exec(postcode.trim().toUpperCase());
   if (!match) return false;
   const [, area, district] = match;

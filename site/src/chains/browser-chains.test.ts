@@ -29,6 +29,9 @@ test("Picturehouse's cut-short codes are named in full", () => {
   expect(picturehouse.isEvent({ title: 'NT Live', tags: ['LiveSat'] })).toBe(true);
   expect(['Arts', 'Cinema City', 'Picturehouse Central'].map(picturehouse.cinemaName)).toEqual(['Arts Picturehouse', 'Cinema City', 'Picturehouse Central']);
   expect(picturehouse.short('Picturehouse Central')).toBe('Central');
+  for (const name of ['Picturehouse Central', 'Crouch End', 'Ealing', 'Finsbury Park', 'Ritzy', 'West Norwood']) {
+    expect(picturehouse.town({ id: name, name, city: 'London', postcode: '' })).toBe('Greater London');
+  }
   expect(['Picturehouse at FACT Liverpool', 'Arts Picturehouse'].map(picturehouse.short)).toEqual(['FACT Liverpool', 'Arts Picturehouse']);
 });
 

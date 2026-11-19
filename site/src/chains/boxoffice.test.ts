@@ -33,5 +33,7 @@ test('Greater London is told by postcode district, outer boroughs included', () 
   const inside = ['W1U 6TJ', 'EC2M 2PF', 'SE19 2TE', 'EN5 1AB', 'TW8 8GJ', 'KT1 1QP', 'BR6 0TW', 'CR0 1LD', 'HA1 2EX', 'RM1 3ER', 'TN16 3AA', 'ub8 1ln'];
   const outside = ['DA9 9SG', 'EN6 1AB', 'KT10 9RT', 'TW20 9FG', 'WD17 1AA', 'SL9 8PN', 'CR3 5AA', 'BA1 1SS', ''];
   expect(inside.filter((code) => !inGreaterLondon(code))).toEqual([]);
-  expect(outside.filter(inGreaterLondon)).toEqual([]);
+  expect(outside.filter((code) => inGreaterLondon(code))).toEqual([]);
+  expect(inGreaterLondon('', 'London')).toBe(true);
+  expect(inGreaterLondon('', 'Bath')).toBe(false);
 });

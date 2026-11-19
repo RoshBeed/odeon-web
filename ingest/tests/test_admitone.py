@@ -43,6 +43,13 @@ class AdmitOneTest(unittest.TestCase):
         )
         self.assertEqual(shows[1]["experiences"], ["Movie Madness", "Subtitled"])
         self.assertEqual(reel.search_title(movie["title"]), "A Film")
+        # Mobile repeats the first normal showing after the category heading.
+        repeated = MOVIE.replace(
+            '</div><div id="panel1">',
+            '<a class="perfButton" href="/hull/booking/123/a-film">20:30</a></div><div id="panel1">',
+        )
+        _, shows = admitone.programme(repeated, "hull", TODAY)
+        self.assertEqual(shows[0]["experiences"], ["Subtitled"])
 
     def test_reel_combines_its_two_platforms_without_skipping_older_cinemas(self):
         client = Site()

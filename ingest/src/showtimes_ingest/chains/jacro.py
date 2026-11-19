@@ -20,7 +20,11 @@ def fields(root, cls, label_tag):
 def listing_day(text, today):
     text = re.sub(r"(\d+)(st|nd|rd|th)\b", r"\1", text).replace(",", "")
     # Checking the weekday also dates next spring's advance bookings in November.
-    years = (None,) if re.search(r"\b\d{4}$", text) else (today.year, today.year + 1)
+    years = (
+        (None,)
+        if re.search(r"\b\d{4}$", text)
+        else (today.year - 1, today.year, today.year + 1)
+    )
     for year in years:
         try:
             day = datetime.strptime(

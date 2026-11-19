@@ -5,6 +5,7 @@ from datetime import date, datetime
 from pathlib import Path
 
 from showtimes_ingest.chains import actone, princecharles, rio
+from showtimes_ingest.chains.jacro import listing_day
 from showtimes_ingest.store import connect
 from showtimes_ingest.week import TZ
 
@@ -75,6 +76,12 @@ class Opus:
 
 
 class RepertoryTest(unittest.TestCase):
+    def test_yearless_headings_keep_yesterdays_december_in_the_previous_year(self):
+        self.assertEqual(
+            listing_day("Thursday 31st December", date(2027, 1, 1)), date(2026, 12, 31)
+        )
+        self.assertEqual(listing_day("Friday 1st January", TODAY), date(2027, 1, 1))
+
     def test_prince_charles_retains_sold_out_showings_in_one_programme_request(self):
         client = PCC()
         data = princecharles.collect(client, TODAY)

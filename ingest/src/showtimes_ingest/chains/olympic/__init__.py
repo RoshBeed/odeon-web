@@ -66,7 +66,7 @@ def page(client, id, site):
 def listing_day(text, today):
     # The printed headings omit their year. January after a November/December
     # programme is next year; never roll a showing from yesterday forward a year.
-    for year in (today.year, today.year + 1):
+    for year in (today.year - 1, today.year, today.year + 1):
         try:
             day = datetime.strptime(f"{text} {year}", "%A %B %d %Y").date()
         except ValueError:

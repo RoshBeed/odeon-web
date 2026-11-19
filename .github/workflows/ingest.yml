@@ -1,8 +1,8 @@
 name: Ingest
 # Each cinema chain's listings, fetched into its own SQLite file, kept as an asset
 # of the `data` release and built into the site by the Deploy workflow.
-# ODEON, the one chain so far, publishes on Tuesdays, so the check runs hourly on
-# Tuesdays and Wednesdays; once the week is stored a check contacts nobody.
+# UK chains publish the week on or before its Tuesday, so the check runs hourly on
+# Tuesdays and Wednesdays; once a chain's week is stored its check contacts nobody.
 on:
   schedule:
     - cron: "17 * * * 2,3"
@@ -83,9 +83,40 @@ jobs:
         # days; enabling the workflow again restarts that clock.
         if: always()
         run: gh workflow enable ingest.yml
+  chains:
+    # The chains fetched with plain requests: Everyman and Showcase (Webedia's
+    # boxoffice platform). One after another; one failing does not stop the next.
+    # CHAINS_INGEST=false pauses them; they can still be started by hand.
+    if: github.ref == 'refs/heads/main' && (vars.CHAINS_INGEST != 'false' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-latest
+    outputs:
+      changed: ${{ steps.chains.outputs.changed }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+      COMMAND: ${{ inputs.command || 'check' }}
+      OMDB_API_KEY: ${{ secrets.OMDB_API_KEY }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.3.3
+      - run: uv sync --locked --no-dev
+        working-directory: ingest
+      - name: Fetch the stored listings
+        run: bash scripts/listings.sh download
+      - name: Ingest each chain
+        id: chains
+        run: |
+          failed=0
+          for chain in everyman showcase; do
+            echo "::group::$chain"
+            bash scripts/ingest-chain.sh "$chain" "$COMMAND" | tee "$RUNNER_TEMP/$chain.out" || failed=1
+            echo "::endgroup::"
+            if grep -q '^changed=true$' "$RUNNER_TEMP/$chain.out"; then echo "changed=true" >> "$GITHUB_OUTPUT"; fi
+          done
+          exit "$failed"
   deploy:
-    needs: ingest
-    if: needs.ingest.outputs.changed == 'true'
+    needs: [ingest, chains]
+    # After either job published new listings, even if the other failed.
+    if: always() && (needs.ingest.outputs.changed == 'true' || needs.chains.outputs.changed == 'true')
     permissions:
       contents: read
       pages: write

@@ -4,6 +4,10 @@ Audit of the development data, 19 November 2026: **93 Greater London venues**, u
 from 55 before this change. Publishing goes through a pull request, CI and the
 deployment from `main`; these numbers describe the validated development data.
 
+The combined export contains **36,020 London screenings across 92 venues**.
+Curzon Chelsea is the remaining directory entry: its API currently returns no
+screenings. It is retained without inventing a programme or claiming it is open.
+
 | Covered operator | London venues |
 | --- | ---: |
 | ODEON | 19 |

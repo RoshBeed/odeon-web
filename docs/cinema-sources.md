@@ -21,6 +21,15 @@ own SQLite release asset, weekly state and export adapter. Collection completes
 before the previous listings are replaced; partial failures keep the old data.
 No new adapter requests live seat plans or individual booking pages.
 
+Full live verification returned **70,081 Cineworld screenings** across all 87
+cinemas and **2,615 Curzon screenings** across 14 of its 15 directory entries.
+Curzon Chelsea had none. Every advertised date was queried, including empty
+responses: Cineworld's returned screenings reached 17 January 2027, despite its
+calendar advertising dates into June; Curzon returned screenings through 5 June.
+This is a source response difference, not a cutoff in our collector. The combined
+static export contained 230,798 screenings, 36,020 in Greater London, and built
+successfully. Dataset sizes were approximately 4.7 MB and 0.95 MB compressed.
+
 ## Reference project and shared mechanisms
 
 [At The Movies](https://github.com/andycroll/atthemovies) and its provider gems

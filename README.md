@@ -135,7 +135,7 @@ Everything also works by clicking or tapping.
 
 There is no server. A GitHub Actions workflow fetches each chain's listings into
 a SQLite file of its own, on that chain's schedule. The site is plain files on
-GitHub Pages; the browser downloads the listings once (about 3 MB, 500 kB with
+GitHub Pages; the browser downloads the listings once (about 5 MB, 1 MB with
 London only) and keeps them in memory, so every key press is answered at once.
 
 ### How it is put together

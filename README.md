@@ -13,8 +13,9 @@ what the others leave, and the matching showtimes and their details stay in
 view. Nothing is booked here: each showing links to its cinema's own booking
 page and can be added to your calendar.
 
-The listings come from cinema chains, each through an adapter of its own.
-ODEON is the first; [adding a chain](#adding-a-chain) is a module on each side.
+The listings come from cinema chains, each through an adapter of its own:
+ODEON, Everyman and Showcase so far. [Adding a chain](#adding-a-chain) is a
+module on each side.
 
 ![The site as its link opens it: the Cinema and Film columns, every showtime, and the first showtime's details with its double bills and the film's synopsis](docs/screenshots/desktop.png)
 
@@ -25,8 +26,9 @@ ODEON is the first; [adding a chain](#adding-a-chain) is a module on each side.
 2. **Choose your columns.** Settings lists the columns you show, left to right;
    move or remove each, and add others: Day (with Today and This weekend), Film,
    Cinema, Location, Picture, Language, Accessibility, Events, Seating, Screen
-   (biggest first), Certificate, Genre, People, Distributor and Release (out now or
-   opening soon).
+   (biggest first), Certificate, Genre, People, Distributor, Release (out now or
+   opening soon) and Chain. With more than one chain, the Cinema column says whose
+   each cinema is.
 3. **Narrow it down.** Pick something in any column. Every column shows how many
    showings each choice would leave, and **All** at the top of each takes a choice
    back. Search a column with `/`, narrow it with `:filter`, and order it A–Z, by
@@ -96,7 +98,7 @@ the site lists all of this.
 
 | Command | Does |
 | --- | --- |
-| `:vs {column}` | Split: add a column (day, film, cinema, location, picture, language, access, events, seating, screen, cert, genre, people, distributor, release) |
+| `:vs {column}` | Split: add a column (day, film, cinema, location, picture, language, access, events, seating, screen, cert, genre, people, distributor, release, chain) |
 | `:q :close` | Close the column |
 | `:only` | Close every other column |
 | `:sort :sort n :sort rating` | Order a column A–Z, by showings, or (films) by rating |
@@ -132,8 +134,8 @@ Everything also works by clicking or tapping.
 
 There is no server. A GitHub Actions workflow fetches each chain's listings into
 a SQLite file of its own, on that chain's schedule. The site is plain files on
-GitHub Pages; the browser downloads the listings once (under 1 MB, about 200 kB
-with London only) and keeps them in memory, so every key press is answered at once.
+GitHub Pages; the browser downloads the listings once (about 2 MB, 300 kB with
+London only) and keeps them in memory, so every key press is answered at once.
 
 ### How it is put together
 
@@ -148,29 +150,54 @@ with London only) and keeps them in memory, so every key press is answered at on
 A chain's stored file stays its raw record, so how it reads can change at the
 next build without fetching anything again.
 
-**ODEON** publishes each week's listings on a Tuesday, so its check runs hourly
-on Tuesdays and Wednesdays; once the week is stored a check contacts nobody. When
-the file changes the workflow calls Deploy, which builds the new listings into
-the site. ODEON refuses requests from cloud providers' addresses, GitHub's runners
+### The chains
+
+| Chain | How its listings are read | Cinemas | Seat counts |
+| --- | --- | --- | --- |
+| ODEON | Vista's API, with the guest token its website gives a browser | about 110, UK and Ireland | yes, from seat plans, fetched once per screen |
+| Everyman | Webedia's boxoffice API, plain requests (`chains/boxoffice.py`) | about 50 | no |
+| Showcase | the same platform and adapter as Everyman | 16 | no |
+
+UK chains publish each Friday-to-Thursday week by its Tuesday, so every chain is
+checked hourly on Tuesdays and Wednesdays: one request asks whether the week's
+last day is out, and once a chain's week is stored its check contacts nobody.
+When a file changes the workflow calls Deploy, which builds the new listings into
+the site. Everyman and Showcase are asked for three months ahead, in about 20 and
+12 requests a week.
+
+ODEON refuses requests from cloud providers' addresses, GitHub's runners
 included, so its traffic goes through a Tailscale exit node on a home network
 (`scripts/via-tailnet.sh`). Nothing else uses it.
+
+Chains looked at and left out, as their listings cannot be read without getting
+round something their sites put in the way: Cineworld and Curzon refuse requests
+that do not come from a browser, and Vue and Picturehouse hand out a session
+token first. Each would need its operator's agreement or a decision to work
+that way.
 
 ### Adding a chain
 
 1. **Ingest:** a package in `ingest/src/showtimes_ingest/chains/<chain>/` that
    writes the shared schema (`store.py`) and offers what `chains/__init__.py`
    lists: `NAME`, `check`, `ingest`, `settled_reason` and `search_title`. Add it
-   to `CHAINS` there, with tests against a fake of the chain.
+   to `CHAINS` there, with tests against a fake of the chain. A chain read with
+   plain requests can use `http.Client` and the weekly check in `weekly.py`, as
+   Everyman and Showcase do; a chain on a platform another already uses needs
+   only its name and website (`chains/everyman/`).
 2. **Export:** a module in `site/src/chains/<chain>.ts` implementing `Chain`
    (`chain.ts`): its name, booking link, cinema names and towns, how its tags,
    seats and distributors read, which showings are special events, and how far
    its schedule is published. Add it to `CHAINS` in `index.ts`.
-3. **Workflow:** an ingest job for the chain on its own schedule, publishing
-   `data/<chain>.sqlite` with `scripts/listings.sh upload <chain>`. Deploy builds
-   every published file into the site.
+3. **Workflow:** a chain read with plain requests joins the loop in the `chains`
+   job of `ingest.yml`, which runs `scripts/ingest-chain.sh` for each; one that
+   needs more (a browser, the tailnet) gets a job of its own, as ODEON has. Each
+   publishes `data/<chain>.sqlite`, and Deploy builds every published file into
+   the site.
 
-Check first that the chain's terms allow it, and keep its traffic to what its
-schedule needs: one ingest per published week, no retry loops.
+Check first that the chain's terms allow it, read only what its own website
+reads, say who is asking (`http.USER_AGENT`), and keep its traffic to what its
+schedule needs: one ingest per published week, a pause between requests, no
+retry loops.
 
 ### Repository settings
 
@@ -181,6 +208,7 @@ schedule needs: one ingest per published week, no retry loops.
 | Variable | `TAILSCALE_EXIT_NODE` | Name of the exit node device |
 | Variable | `ODEON_CINEMAS` | Optional. ODEON site IDs to store, comma-separated; empty stores every cinema |
 | Variable | `ODEON_INGEST` | Optional. `false` pauses ODEON's schedule |
+| Variable | `CHAINS_INGEST` | Optional. `false` pauses the other chains' schedule |
 
 Start an ingest by hand:
 

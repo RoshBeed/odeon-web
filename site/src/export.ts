@@ -63,10 +63,22 @@ export function exportListings(sources: Source[], only?: Set<string>): Data {
     const main = group.reduce((best, film) => ((showings.get(film.id) ?? 0) > (showings.get(best.id) ?? 0) ? film : best));
     for (const film of group) {
       merged.set(film.id, main.id);
+      // Whatever the chosen listing lacks, another may have: ratings, a synopsis, the cast.
       main.imdb ??= film.imdb;
       main.imdbId ??= film.imdbId;
       main.metacritic ??= film.metacritic;
+      main.runtime ??= film.runtime;
+      main.release ??= film.release;
+      main.trailer ??= film.trailer;
+      main.certificate ||= film.certificate;
+      main.synopsis ||= film.synopsis;
+      main.distributor ||= film.distributor;
+      if (!main.genres.length) main.genres = film.genres;
+      if (!main.people.length) main.people = film.people;
     }
+    // A YouTube trailer plays in the page; another chain's video file only links out.
+    const playable = group.find((film) => film.trailer && /youtu\.?be/.test(film.trailer));
+    if (playable) main.trailer = playable.trailer;
     return main;
   });
   const film = (chain: Chain, id: string) => merged.get(own(chain, id)) ?? own(chain, id);

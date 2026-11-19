@@ -1,6 +1,6 @@
 # Agent notes
 
-- A cinema listings finder for any chain; ODEON is the first. Two parts: `ingest/` (Python, uv)
+- A cinema listings finder for any chain: ODEON, Everyman and Showcase so far. Two parts: `ingest/` (Python, uv)
   fetches each chain into its own SQLite file (`data/<chain>.sqlite`); `site/` (Vite, TypeScript,
   no UI framework) is a static page that holds the listings in memory. Its build
   (`npm run listings`) exports every chain's file into JSON documents (every cinema, and Greater
@@ -24,6 +24,12 @@
 - Each chain's file is both what the site shows and its ingest's only state between runs
   (release week, run history, screen sizes). It is published as `<chain>.sqlite.gz` on the
   `data` release, never committed.
+- Read a chain only as its own website does, with plain requests that say who is asking
+  (`http.USER_AGENT`); never get round what a site puts in the way of automated clients (a
+  bot check, a challenge, a session token handed out first). That is why Cineworld, Curzon, Vue
+  and Picturehouse are not chains here. Everyman and Showcase share one adapter for Webedia's
+  boxoffice platform (`chains/boxoffice.py`, `site/src/chains/boxoffice.ts`); the plain-request
+  chains share the weekly check (`weekly.py`) and the `chains` job in the Ingest workflow.
 - Keep every chain's traffic minimal: one ingest per published week, no retry loops, and never
   fetch per-screening live data. Tests use a fake of each chain. ODEON's traffic goes through
   the owner's tailnet (`scripts/via-tailnet.sh`); its tailnet hostname and tag are set in the

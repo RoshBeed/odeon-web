@@ -36,16 +36,16 @@ def ingest_ratings(chain, path=None, key=None):
             title = chain.search_title(title)
             # Venue-scoped programme IDs can describe the same film dozens of
             # times. OMDb uses title/year; spend its quota once for that query.
-            key = (title.casefold(), release[:4] if release else None)
-            if key not in looked_up:
+            lookup_key = (title.casefold(), release[:4] if release else None)
+            if lookup_key not in looked_up:
                 try:
-                    looked_up[key] = omdb.lookup(title, release)
+                    looked_up[lookup_key] = omdb.lookup(title, release)
                 except RuntimeError:
                     if omdb.stopped:  # bad key or quota: every further film fails
                         raise
                     failed += 1
-                    looked_up[key] = None
-            scores = looked_up[key]
+                    looked_up[lookup_key] = None
+            scores = looked_up[lookup_key]
             if scores:
                 found[film_id] = scores
         # IMDb's own file is fresher than OMDb's copy of the IMDb score.

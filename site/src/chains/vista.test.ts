@@ -13,8 +13,12 @@ describe('Vista cinema operators', () => {
     expect(cineworld.booking.replace('{id}', '103-123')).toBe('https://web.cineworld.co.uk/order/showtimes/103-123/seats');
     expect(curzon.booking.replace('{id}', 'SOH1-123')).toBe('https://www.curzon.com/ticketing/seats/?showtimeId=SOH1-123');
     expect(cineworld.tag('IMAX Film')).toEqual({ label: 'IMAX', kind: 'Picture' });
+    expect(cineworld.tag('Infinity Vision')?.kind).toBe('Picture');
+    expect(cineworld.tag('Recliner')?.kind).toBe('Seating');
+    expect(cineworld.tag('Strobe Lighting')?.kind).toBe('Accessibility');
     expect(cineworld.tag('2D Film')).toBeNull();
     expect(curzon.tag('Subtitled')?.kind).toBe('Language');
     expect(cineworld.isEvent({ title: 'Concert', tags: ['Alt Content Recorded'] })).toBe(true);
+    expect(cineworld.isEvent({ title: 'Private screening', tags: ['Screen Hire'] })).toBe(true);
   });
 });

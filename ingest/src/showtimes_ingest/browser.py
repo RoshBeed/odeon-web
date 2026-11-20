@@ -34,6 +34,7 @@ CHALLENGE = (
 class Browser:
     def __init__(self, site, start="/", settle=4000, pause=1.0, timeout=60_000):
         self.site, self.start, self.settle = site.rstrip("/"), start, settle
+        self.transport = "browser"
         self.pause, self.timeout = pause, timeout
         self.requests, self.last = 0, 0.0
         self.playwright = self.browser = self.page = None
@@ -52,7 +53,7 @@ class Browser:
             from playwright.sync_api import Error, sync_playwright
         except ImportError:
             raise RuntimeError(
-                "Install dependencies: uv sync; uv run playwright install webkit"
+                "Browser is unavailable; rebuild the full ingest Docker container"
             ) from None
         if not self.browser:
             proxy = os.environ.get("SHOWTIMES_PROXY")

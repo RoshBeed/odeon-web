@@ -227,23 +227,3 @@ def collect(client, today, known=None):
         "availability": availability,
         "screenings": list(unique.values()),
     }
-
-
-def published(client, day):
-    """Whether the week's last day is listed yet: one request, for the first open cinema's day."""
-    cinemas = [
-        cinema
-        for cinema in theaters(client)
-        if not (cinema.get("practicalInfo") or {}).get("closed")
-    ]
-    if not cinemas:
-        return False
-    start = datetime.combine(day, datetime.min.time()).replace(hour=3)
-    listing = schedule(
-        client, cinemas[:CINEMAS_PER_REQUEST], start, start + timedelta(days=1)
-    )
-    return any(
-        days
-        for each in listing.values()
-        for days in (each.get("schedule") or {}).values()
-    )

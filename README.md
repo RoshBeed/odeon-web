@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/RoshBeed/showtimes/actions/workflows/ci.yml/badge.svg)](https://github.com/RoshBeed/showtimes/actions/workflows/ci.yml)
 [![Deploy](https://github.com/RoshBeed/showtimes/actions/workflows/deploy.yml/badge.svg)](https://github.com/RoshBeed/showtimes/actions/workflows/deploy.yml)
-[![Ingest](https://github.com/RoshBeed/showtimes/actions/workflows/ingest.yml/badge.svg)](https://github.com/RoshBeed/showtimes/actions/workflows/ingest.yml)
+[![ODEON](https://github.com/RoshBeed/showtimes/actions/workflows/ingest-odeon.yml/badge.svg)](https://github.com/RoshBeed/showtimes/actions/workflows/ingest-odeon.yml)
 
 **Live site: [showtimes.ramuk.net](https://showtimes.ramuk.net)** · Greater London only:
 [showtimes.ramuk.net/?cinemas=london](https://showtimes.ramuk.net/?cinemas=london)
@@ -181,18 +181,25 @@ Chrome 150 profile, bundled and checksum-verified in the ingest container. No
 browser or JavaScript is needed for them. Tokens stay in memory. The shared
 Vista collector reads every advertised date in batches of at most five cinemas.
 
-UK chains publish each Friday-to-Thursday week by its Tuesday, so every chain is
-checked hourly on Tuesdays and Wednesdays: a release check asks whether the week's
-last day is out, and once a chain's week is stored its check contacts nobody.
-When a file changes the workflow calls Deploy, which builds the new listings into
-the site. Everyman and Showcase are asked for three months ahead, in about 20 and
+Each chain is collected once a week, keeping its traffic minimal: on the first
+check after its weekly window opens (`ingest/src/showtimes_ingest/policy.py`), once
+its Friday-to-Thursday week is published and before that Friday. ODEON's window
+opens on Wednesdays at 21:00, Everyman's on Wednesdays at 06:00, every other
+chain's on Tuesdays at 06:00 (London time). Each chain has its own workflow
+(`ingest-<chain>.yml`, all built on `ingest-provider.yml`), scheduled at its window
+and twice more an hour apart; once the week is stored a check contacts nobody, and
+three failures pause the chain until the next week's window. A failed fetch keeps
+the previous listings. When a file changes the workflow builds the new listings
+into the site. Everyman and Showcase are asked for three months ahead, in about 20 and
 12 requests a week, Vue in about a hundred (one per cinema; each cinema's
 address is read once and kept), Picturehouse in a single page load.
 
-ODEON refuses requests from cloud providers' addresses, GitHub's runners
+ODEON now shares the Vista collector with Cineworld and Curzon: its guest token is
+read by curl-impersonate first, with a real browser as the one fallback if that
+fails. ODEON refuses requests from cloud providers' addresses, GitHub's runners
 included, so its traffic goes through a Tailscale exit node on a home network
-(`scripts/via-tailnet.sh`). Vue and Picturehouse go the same way; Everyman and
-Showcase need not. Cineworld and Curzon currently answer directly.
+(`scripts/via-tailnet.sh`), as do Vue's, Picturehouse's, Cineworld's and Curzon's.
+The tailnet identity is one device, so those workflows queue for it in turn.
 
 BFI Southbank's first programme page opens in a browser, but subsequent pages and BFI IMAX return
 challenges, so a complete BFI feed is not available yet. See the
@@ -208,18 +215,18 @@ supported cinemas nationwide.
    lists: `NAME`, `check`, `ingest`, `settled_reason` and `search_title`. Add it
    to `CHAINS` there, with tests against a fake of the chain. A chain read with
    plain requests can use `http.Client`, one read through its website
-   `browser.Browser`, and either the weekly check in `weekly.py`, as all but ODEON
-   do; a chain on a platform another already uses needs only its name and
+   `browser.Browser`, and the shared lifecycle in `refresh.py` with its weekly
+   window in `policy.py`; a chain on a platform another already uses needs only its name and
   website (`chains/everyman/`). Vista guest-token providers use `guest.Client`
   and the shared `chains/vista.py` collector.
 2. **Export:** a module in `site/src/chains/<chain>.ts` implementing `Chain`
    (`chain.ts`): its name, booking link, cinema names and towns, how its tags,
    seats and distributors read, which showings are special events, and how far
    its schedule is published. Add it to `CHAINS` in `index.ts`.
-3. **Workflow:** the chain joins the loop in the `chains` job of `ingest.yml`,
-   which runs `scripts/ingest-chain.sh` for each, through the tailnet if it is
-   read in a browser. Each publishes `data/<chain>.sqlite`, and Deploy builds
-   every published file into the site.
+3. **Workflow:** an `ingest-<chain>.yml` calling `ingest-provider.yml`, scheduled
+   at the chain's weekly window, with `browser` and `via-tailnet` set if it needs
+   them. Add the chain to the manual dispatcher in `ingest.yml`. Each publishes
+   `data/<chain>.sqlite`, and every published file is built into the site.
 
 Check first that the chain's terms allow it, read only what its own website
 reads, say who is asking (`http.USER_AGENT`), and keep its traffic to what its
@@ -235,17 +242,22 @@ retry loops.
 | Variable | `TAILSCALE_EXIT_NODE` | Name of the exit node device |
 | Variable | `ODEON_CINEMAS` | Optional. ODEON site IDs to store, comma-separated; empty stores every cinema |
 | Variable | `ODEON_INGEST` | Optional. `false` pauses ODEON's schedule |
-| Variable | `CHAINS_INGEST` | Optional. `false` pauses the other chains' schedule |
+| Variable | `CHAINS_INGEST` | Optional. `false` pauses every other chain's schedule |
+| Variable | `<CHAIN>_INGEST` | Optional. `false` pauses one chain's schedule, as `VUE_INGEST` |
 
-Start an ingest by hand:
+Start one chain's ingest by hand, or every chain's through the dispatcher:
 
 ```bash
-gh workflow run ingest.yml -f command=run
+gh workflow run ingest-odeon.yml -f command=check
 ```
 
-`check` ingests only if the chain's latest listings are not stored yet; `run`
-ingests now. A failed ingest is recorded in the chain's file and tried again at
-the next check, at most three times a week.
+```bash
+gh workflow run ingest.yml -f provider=all -f command=check
+```
+
+`check` ingests only if the chain's week is not stored yet; `run` ingests now. A
+failed ingest is recorded in the chain's file and tried again at the next check,
+at most three times a week.
 
 ## Working on it
 

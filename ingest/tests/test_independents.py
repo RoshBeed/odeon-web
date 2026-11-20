@@ -145,7 +145,6 @@ class IndependentTest(unittest.TestCase):
         ]
         summer = light.collect(client, date(2026, 7, 1))["screenings"][0]
         self.assertEqual(summer["starts_at"], "2026-07-01T19:30:00Z")
-        self.assertFalse(light.published(client, TODAY))
 
     def test_light_rejects_missing_feeds_and_unexpected_hosts(self):
         self.assertRaises(RuntimeError, light.embedded, "a challenge", "__sites")
@@ -198,8 +197,6 @@ class IndependentTest(unittest.TestCase):
         self.assertEqual(show["experiences"], ["Dolby Cinema", "Subtitled"])
         self.assertEqual(data["films"][0]["title"], "A Film & Sequel")
         self.assertEqual(show["starts_at"], "2026-11-19T20:30:00Z")
-        self.assertTrue(olympic.published(client, TODAY))
-        self.assertFalse(olympic.published(client, date(2026, 11, 26)))
 
     def test_olympic_distinguishes_arches_and_handles_next_year(self):
         client = OlympicSite()

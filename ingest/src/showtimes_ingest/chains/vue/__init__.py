@@ -18,7 +18,7 @@ import re
 from contextlib import nullcontext
 from datetime import datetime, timedelta
 
-from showtimes_ingest import weekly
+from showtimes_ingest import refresh
 from showtimes_ingest.browser import Browser
 from showtimes_ingest.log import log
 from showtimes_ingest.scores import search_title
@@ -214,31 +214,19 @@ def collect(client, today, known=None):
     }
 
 
-def published(client, day):
-    """Whether the week's last day is listed yet: the days the first cinema has showings."""
-    listed = cinemas(client)
-    if not listed:
-        return False
-    dates = client.fetch(f"{API}/showingDates", [("cinemaId", listed[0]["cinemaId"])])
-    return any(
-        entry.get("showingDate", "")[:10] == str(day) and entry.get("hasShowings", True)
-        for entry in dates.get("result") or []
-    )
-
-
 def session(client):
     return nullcontext(client) if client else Browser(SITE)
 
 
 def ingest(path=None, today=None, client=None):
     with session(client) as browser:
-        return weekly.ingest(path, NAME, collect, browser, today)
+        return refresh.ingest(path, NAME, collect, browser, today)
 
 
 def check(path=None, moment=None, client=None):
     with session(client) as browser:
-        return weekly.check(path, NAME, collect, published, browser, moment)
+        return refresh.check(path, NAME, collect, browser, moment)
 
 
 def settled_reason(path=None, today=None):
-    return weekly.settled_reason(path, NAME, today)
+    return refresh.settled_reason(path, NAME, today)

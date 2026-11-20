@@ -5,10 +5,11 @@ import tempfile
 import unittest
 from datetime import date, datetime
 from pathlib import Path
+from unittest.mock import patch
 
-from showtimes_ingest import weekly
+from showtimes_ingest import refresh, store
 from showtimes_ingest.chains import boxoffice, everyman
-from showtimes_ingest.store import MAX_FAILURES, connect, get_state
+from showtimes_ingest.store import MAX_FAILURES, get_state
 from showtimes_ingest.week import TZ
 
 TODAY = date(2026, 11, 11)  # a Wednesday; its week runs to Thursday the 19th
@@ -134,6 +135,12 @@ class FakeSite:
 
 class BoxOfficeTest(unittest.TestCase):
     def setUp(self):
+        original = store.utc
+        frozen = patch.object(
+            store, "utc", side_effect=lambda moment=None: original(moment or NOW)
+        )
+        frozen.start()
+        self.addCleanup(frozen.stop)
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)
         self.path = str(Path(directory.name) / "everyman.sqlite")
@@ -180,70 +187,46 @@ class BoxOfficeTest(unittest.TestCase):
         # Index page, the cinemas' query (tried first), one schedule batch, one films batch.
         self.assertEqual(site.requests, 4)
 
-    def test_the_weekly_check_waits_for_the_last_day_then_fetches_once(self):
-        def check(site):
-            return weekly.check(
-                self.path,
-                everyman.NAME,
-                boxoffice.collect,
-                boxoffice.published,
-                site,
-                NOW,
-            )
-
+    def test_refreshes_once_a_week_at_its_window(self):
         self.assertEqual(
-            check(FakeSite()), "ingested"
-        )  # nothing stored: fill it at once
-        self.assertEqual(get_state(self.path, "release_week"), "2026-11-10")
-        self.assertEqual(check(FakeSite()), "done")
-        self.assertEqual(everyman.settled_reason(self.path, TODAY), "done")
-        later = datetime(
-            2026, 11, 17, 9, tzinfo=TZ
-        )  # the next Tuesday, before its week is out
-        waiting = FakeSite(last_day="2026-11-19")
-        self.assertEqual(
-            weekly.check(
-                self.path,
-                everyman.NAME,
-                boxoffice.collect,
-                boxoffice.published,
-                waiting,
-                later,
-            ),
-            "waiting",
+            refresh.check(self.path, everyman.NAME, boxoffice.collect, FakeSite(), NOW),
+            "ingested",
         )
-        out = FakeSite(last_day="2026-11-26")
+        self.assertIsNone(get_state(self.path, "release_week"))
+        same = FakeSite()
         self.assertEqual(
-            weekly.check(
-                self.path,
-                everyman.NAME,
-                boxoffice.collect,
-                boxoffice.published,
-                out,
-                later,
+            refresh.check(self.path, everyman.NAME, boxoffice.collect, same, NOW),
+            "done",
+        )
+        self.assertEqual(same.requests, 0)
+        # Everyman's window opens on Wednesdays at 06:00: nothing on Thursday,
+        # then the next Wednesday.
+        thursday = datetime(2026, 11, 12, 9, tzinfo=TZ)
+        self.assertEqual(
+            refresh.check(
+                self.path, everyman.NAME, boxoffice.collect, FakeSite(), thursday
+            ),
+            "done",
+        )
+        next_week = datetime(2026, 11, 18, 6, 30, tzinfo=TZ)
+        self.assertEqual(
+            refresh.check(
+                self.path, everyman.NAME, boxoffice.collect, FakeSite(), next_week
             ),
             "ingested",
         )
 
-    def test_failures_are_recorded_and_pause_the_week(self):
+    def test_failure_limit_is_visible_as_a_failed_check(self):
         with self.assertLogs("showtimes", "ERROR"):
             for _ in range(MAX_FAILURES):
                 with self.assertRaises(RuntimeError):
-                    weekly.check(
+                    refresh.check(
                         self.path,
                         everyman.NAME,
                         boxoffice.collect,
-                        boxoffice.published,
                         FakeSite(fail="schedule"),
                         NOW,
                     )
-        with self.assertLogs("showtimes", "WARNING"):
-            self.assertEqual(everyman.settled_reason(self.path, TODAY), "paused")
-        with connect(self.path) as db:
-            self.assertEqual(
-                db.execute("SELECT count(*) FROM screenings").fetchone()[0], 0
-            )
-
-
-if __name__ == "__main__":
-    unittest.main()
+        self.assertEqual(everyman.settled_reason(self.path, NOW), "paused")
+        with self.assertRaisesRegex(RuntimeError, "paused"):
+            refresh.check(self.path, everyman.NAME, boxoffice.collect, FakeSite(), NOW)

@@ -11,8 +11,9 @@ from pathlib import Path
 from unittest.mock import patch
 
 from showtimes_ingest.chains import cineworld, curzon, vista
-from showtimes_ingest.guest import Client, extract_token
+from showtimes_ingest.guest import Client
 from showtimes_ingest.store import connect
+from showtimes_ingest.tokens import extract_token
 
 TODAY = date(2026, 11, 19)
 
@@ -55,7 +56,9 @@ class GuestTest(unittest.TestCase):
     def test_credentials_are_stdin_only_and_rejected_tokens_are_dropped_without_retry(
         self,
     ):
-        client = Client(cineworld.SOURCE, pause=0, executable="/test/curl-impersonate")
+        client = Client(
+            cineworld.SOURCE, pause=0, executable="/test/curl-impersonate", mode="curl"
+        )
         token = jwt(int(time.time()) + 3600)
         replies = [
             subprocess.CompletedProcess(

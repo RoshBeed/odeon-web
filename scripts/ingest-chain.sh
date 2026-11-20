@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# One chain's turn in the Ingest workflow's `chains` job: check whether it is due,
+# One provider's workflow: check whether it is due,
 # ingest, rate the films, and publish its file if it changed. Prints changed=true
 # when it did. With VIA set (scripts/via-tailnet.sh), the fetch alone goes through
 # it, and only when the chain is due.
@@ -15,10 +15,23 @@ before=$(sha256sum "$SHOWTIMES_DATABASE" 2>/dev/null || true)
 status=0
 # One attempt: a failure is recorded in the chain's file and the next hourly
 # check tries again, up to three times a week.
-if [ "$command" = run ] || bash scripts/ingest.sh "$chain" due; then
+due=0
+if [ "$command" != run ]; then
+  bash scripts/ingest.sh "$chain" due || due=$?
+fi
+if [ "$command" = run ] || [ "$due" = 0 ]; then
   ${VIA:+"$VIA"} bash scripts/ingest.sh "$chain" "$command" || status=$?
+elif [ "$due" != 3 ]; then
+  status=$due
 fi
 bash scripts/ingest.sh "$chain" ratings || status=$?
+if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
+  {
+    printf '### %s ingestion\n\n```json\n' "$chain"
+    bash scripts/ingest.sh "$chain" status
+    printf '\n```\n'
+  } >> "$GITHUB_STEP_SUMMARY"
+fi
 # Also after a failure, so that the failed run is on record next time.
 if [ -f "$SHOWTIMES_DATABASE" ] && [ "$(sha256sum "$SHOWTIMES_DATABASE")" != "$before" ]; then
   bash scripts/listings.sh upload "$chain"

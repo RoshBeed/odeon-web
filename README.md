@@ -18,7 +18,7 @@ ODEON, Vue, Everyman, Picturehouse, Showcase, Cineworld, Curzon, The Light, Reel
 Olympic Studios and London independents. [Adding a
 chain](#adding-a-chain) is a module on each side.
 
-![The site as its link opens it: the Cinema and Film columns, every showtime, and the first showtime's details with its double bills and the film's synopsis](docs/screenshots/desktop.png)
+![The site as its link opens it: the Chain, Cinema and Film columns, every showtime, and the first showtime's details with its double bills and the film's synopsis](docs/screenshots/desktop.png)
 
 ## Using the site
 
@@ -28,8 +28,8 @@ chain](#adding-a-chain) is a module on each side.
    move or remove each, and add others: Day (with Today and This weekend), Film,
    Cinema, Location, Picture, Language, Accessibility, Events, Seating, Screen
    (biggest first), Certificate, Genre, People, Distributor, Release (out now or
-   opening soon) and Chain. With more than one chain, the Cinema column says whose
-   each cinema is.
+   opening soon) and Chain. The site opens on Chain, Cinema and Film. Until a chain
+   is picked, the Cinema column says whose each cinema is.
 3. **Narrow it down.** Pick something in any column. Every column shows how many
    showings each choice would leave, and **All** at the top of each takes a choice
    back. Search a column with `/`, narrow it with `:filter`, and order it A–Z, by

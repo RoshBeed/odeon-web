@@ -5,7 +5,7 @@ import re
 from datetime import datetime
 from urllib.parse import urlsplit
 
-from showtimes_ingest import weekly
+from showtimes_ingest import refresh
 from showtimes_ingest.chains.pages import embedded, parse
 from showtimes_ingest.http import Client
 from showtimes_ingest.scores import search_title
@@ -170,21 +170,13 @@ def collect(client, today, known=None):
     }
 
 
-def published(client, day):
-    return any(
-        date["Key"] == day.strftime("%Y%m%d") and date["Sessions"]
-        for movie in guide(client, cinemas(client)[0])
-        for date in movie.get("Dates") or []
-    )
-
-
 def ingest(path=None, today=None, client=None):
-    return weekly.ingest(path, NAME, collect, client or Client(SITE), today)
+    return refresh.ingest(path, NAME, collect, client or Client(SITE), today)
 
 
 def check(path=None, moment=None, client=None):
-    return weekly.check(path, NAME, collect, published, client or Client(SITE), moment)
+    return refresh.check(path, NAME, collect, client or Client(SITE), moment)
 
 
 def settled_reason(path=None, today=None):
-    return weekly.settled_reason(path, NAME, today)
+    return refresh.settled_reason(path, NAME, today)

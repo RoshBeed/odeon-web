@@ -10,10 +10,22 @@ jobs:
       - uses: actions/checkout@v7
       - name: Check ingest in Docker
         run: docker build --target checks -f ingest/Dockerfile -t showtimes-ingest-checks .
-      - name: Build the production ingest container
-        run: docker build -f ingest/Dockerfile -t showtimes-ingest .
+      # actionlint 1.7.12 predates GitHub's documented FIFO queue property.
+      # Only that exact diagnostic is ignored; the reusable workflow is also
+      # parsed and executed by GitHub in the workflow job below.
+      - name: Validate every provider workflow
+        run: docker run --rm -v "$PWD:/repo" -w /repo rhysd/actionlint:1.7.12 -ignore 'unexpected key "queue" for "concurrency" section'
       # The scripts the Ingest workflow runs are otherwise first read on the day they are needed.
       - run: for script in scripts/*.sh; do bash -n "$script"; done
+  workflow:
+    permissions:
+      contents: read
+    uses: ./.github/workflows/ingest-provider.yml
+    with:
+      provider: odeon
+      workflow: ci.yml
+      browser: true
+      validation: true
   site:
     runs-on: ubuntu-latest
     steps:

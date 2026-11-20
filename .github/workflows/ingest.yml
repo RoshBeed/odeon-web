@@ -1,123 +1,37 @@
-name: Ingest
-# Each cinema chain's listings, fetched into its own SQLite file, kept as an asset
-# of the `data` release and built into the site by the Deploy workflow.
-# UK chains publish the week on or before its Tuesday, so the check runs hourly on
-# Tuesdays and Wednesdays; once a chain's week is stored its check contacts nobody.
+name: Ingest all providers
+# Manual dispatcher only. Each provider owns its schedule, history and badge.
 on:
-  schedule:
-    - cron: "17 * * * 2,3"
   workflow_dispatch:
     inputs:
+      provider:
+        description: Provider to refresh
+        type: choice
+        options: [all, odeon, everyman, showcase, vue, picturehouse, cineworld, curzon, light, olympic, reel, princecharles, rio, lexi, phoenix, actone]
+        default: all
       command:
-        description: "check: ingest only if the latest listings are not stored. run: ingest now."
         type: choice
         options: [check, run]
         default: check
-concurrency:
-  group: ingest
-  cancel-in-progress: false
 permissions:
-  contents: write
   actions: write
+  contents: read
 jobs:
-  ingest:
-    # ODEON_INGEST=false pauses ODEON's schedule; it can still be started by hand.
-    if: github.ref == 'refs/heads/main' && (vars.ODEON_INGEST != 'false' || github.event_name == 'workflow_dispatch')
+  dispatch:
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    outputs:
-      changed: ${{ steps.publish.outputs.changed }}
     env:
       GH_TOKEN: ${{ github.token }}
-      CHAIN: odeon
-      SHOWTIMES_DATABASE: ${{ github.workspace }}/data/odeon.sqlite
-      ODEON_CINEMAS: ${{ vars.ODEON_CINEMAS }}
-      COMMAND: ${{ inputs.command || 'check' }}
+      PROVIDER: ${{ inputs.provider }}
+      COMMAND: ${{ inputs.command }}
     steps:
       - uses: actions/checkout@v7
-      - name: Build the ingest container
-        run: docker build -f ingest/Dockerfile -t showtimes-ingest .
-      - name: Fetch the stored listings
-        # Starting from last week's file keeps the screen sizes already
-        # fetched, and records which release week is stored.
+      - name: Start the independent provider workflows
         run: |
-          bash scripts/listings.sh download
-          sha256sum "$SHOWTIMES_DATABASE" > "$RUNNER_TEMP/before" || true
-      - name: Would this contact the chain?
-        id: due
-        run: |
-          if [ "$COMMAND" = run ] || bash scripts/ingest.sh "$CHAIN" due; then echo "due=true" >> "$GITHUB_OUTPUT"; fi
-      - name: Ingest the listings
-        # One attempt: a failure is recorded in the file and the next hourly
-        # check tries again, up to three times a week. ODEON refuses cloud
-        # addresses, so its traffic goes through the owner's tailnet.
-        if: steps.due.outputs.due == 'true'
-        run: bash scripts/via-tailnet.sh bash scripts/ingest.sh "$CHAIN" "$COMMAND"
-        env:
-          TAILSCALE_EXIT_NODE: ${{ vars.TAILSCALE_EXIT_NODE }}
-          TAILSCALE_STATE: ${{ secrets.TAILSCALE_STATE }}
-      - name: Ingest the ratings
-        run: bash scripts/ingest.sh "$CHAIN" ratings
-        env:
-          OMDB_API_KEY: ${{ secrets.OMDB_API_KEY }}
-      - name: Publish the listings
-        id: publish
-        # Also after a failure, so that the failed run is on record next time.
-        if: always()
-        run: |
-          if [ ! -f "$SHOWTIMES_DATABASE" ] || sha256sum --check --status "$RUNNER_TEMP/before"; then
-            echo "Nothing new to publish."
-            exit 0
+          if [ "$PROVIDER" = all ]; then
+            providers="odeon everyman showcase vue picturehouse cineworld curzon light olympic reel princecharles rio lexi phoenix actone"
+          else
+            providers="$PROVIDER"
           fi
-          bash scripts/listings.sh upload "$CHAIN"
-          echo "changed=true" >> "$GITHUB_OUTPUT"
-      - name: Keep the schedule alive
-        # GitHub switches off schedules in a repository with no commits for 60
-        # days; enabling the workflow again restarts that clock.
-        if: always()
-        run: gh workflow enable ingest.yml
-  chains:
-    # The other chains, one after another; one failing does not stop the next.
-    # Everyman and Showcase (Webedia's boxoffice platform) answer plain requests;
-    # Vue and Picturehouse are read through a real browser, as ODEON is, with its
-    # traffic through the owner's tailnet.
-    # CHAINS_INGEST=false pauses them; they can still be started by hand.
-    # After ODEON's job, whatever became of it: the tailnet identity is one device,
-    # which cannot be connected from two runners at once.
-    needs: ingest
-    if: always() && github.ref == 'refs/heads/main' && (vars.CHAINS_INGEST != 'false' || github.event_name == 'workflow_dispatch')
-    runs-on: ubuntu-latest
-    outputs:
-      changed: ${{ steps.chains.outputs.changed }}
-    env:
-      GH_TOKEN: ${{ github.token }}
-      COMMAND: ${{ inputs.command || 'check' }}
-      OMDB_API_KEY: ${{ secrets.OMDB_API_KEY }}
-      TAILSCALE_EXIT_NODE: ${{ vars.TAILSCALE_EXIT_NODE }}
-      TAILSCALE_STATE: ${{ secrets.TAILSCALE_STATE }}
-    steps:
-      - uses: actions/checkout@v7
-      - name: Build the ingest container
-        run: docker build -f ingest/Dockerfile -t showtimes-ingest .
-      - name: Fetch the stored listings
-        run: bash scripts/listings.sh download
-      - name: Ingest each chain
-        id: chains
-        run: |
-          failed=0
-          for chain in everyman showcase vue picturehouse cineworld curzon light olympic reel princecharles rio lexi phoenix actone; do
-            echo "::group::$chain"
-            case "$chain" in vue|picturehouse) via="$PWD/scripts/via-tailnet.sh" ;; *) via= ;; esac
-            VIA="$via" bash scripts/ingest-chain.sh "$chain" "$COMMAND" | tee "$RUNNER_TEMP/$chain.out" || failed=1
-            echo "::endgroup::"
-            if grep -q '^changed=true$' "$RUNNER_TEMP/$chain.out"; then echo "changed=true" >> "$GITHUB_OUTPUT"; fi
+          for provider in $providers; do
+            gh workflow run "ingest-$provider.yml" --ref main -f "command=$COMMAND"
           done
-          exit "$failed"
-  deploy:
-    needs: [ingest, chains]
-    # After either job published new listings, even if the other failed.
-    if: always() && (needs.ingest.outputs.changed == 'true' || needs.chains.outputs.changed == 'true')
-    permissions:
-      contents: read
-      pages: write
-      id-token: write
-    uses: ./.github/workflows/deploy.yml

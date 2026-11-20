@@ -54,7 +54,7 @@ class AdmitOneTest(unittest.TestCase):
     def test_reel_combines_its_two_platforms_without_skipping_older_cinemas(self):
         client = Site()
         with patch.object(
-            reel,
+            reel._source,
             "directory",
             return_value=[
                 {

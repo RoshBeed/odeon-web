@@ -3,7 +3,7 @@ import unittest
 from datetime import date
 from pathlib import Path
 
-from showtimes_ingest.chains import reel
+from showtimes_ingest.chains import jacro, reel
 from showtimes_ingest.chains.pages import parse
 from showtimes_ingest.store import connect
 
@@ -72,8 +72,6 @@ class ReelTest(unittest.TestCase):
             ("777", "Screen 2", "2026-11-20T20:30:00Z"),
         )
         self.assertEqual(show["experiences"], ["Lounge", "3D", "Subtitled"])
-        self.assertTrue(reel.published(ReelSite(), date(2026, 11, 26)))
-        self.assertFalse(reel.published(ReelSite(), date(2026, 12, 3)))
         with tempfile.TemporaryDirectory() as directory:
             path = str(Path(directory) / "reel.sqlite")
             reel.ingest(path, TODAY, ReelSite())
@@ -86,9 +84,11 @@ class ReelTest(unittest.TestCase):
     def test_dates_use_the_printed_weekday_to_distinguish_next_years_advance_bookings(
         self,
     ):
-        self.assertEqual(reel.listing_day("Sunday, 30th May", TODAY), date(2027, 5, 30))
         self.assertEqual(
-            reel.listing_day("Friday, 1st January", TODAY), date(2027, 1, 1)
+            jacro.listing_day("Sunday, 30th May", TODAY), date(2027, 5, 30)
+        )
+        self.assertEqual(
+            jacro.listing_day("Friday, 1st January", TODAY), date(2027, 1, 1)
         )
         root = parse(MOVIE.replace("Friday, 20th November", "Wednesday, 1st July"))
         _, shows = reel.movie_page(

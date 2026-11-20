@@ -1,9 +1,8 @@
-"""Curzon's public page-data guest session and Vista programme."""
+"""Curzon configuration for the shared Vista backend adapter."""
 
-from showtimes_ingest import weekly
-from showtimes_ingest.chains.vista import collect, published
-from showtimes_ingest.guest import Client, Source
+from showtimes_ingest.chains.vista import Vista
 from showtimes_ingest.scores import search_title
+from showtimes_ingest.tokens import Source
 
 NAME = "curzon"
 SOURCE = Source(
@@ -12,18 +11,11 @@ SOURCE = Source(
     "https://www.curzon.com/",
     "initial",
 )
+_source = Vista(SOURCE)
+
+collect = _source.collect
+ingest = _source.ingest
+check = _source.check
+settled_reason = _source.settled_reason
+
 __all__ = ["NAME", "check", "ingest", "settled_reason", "search_title"]
-
-
-def ingest(path=None, today=None, client=None):
-    return weekly.ingest(path, NAME, collect, client or Client(SOURCE), today)
-
-
-def check(path=None, moment=None, client=None):
-    return weekly.check(
-        path, NAME, collect, published, client or Client(SOURCE), moment
-    )
-
-
-def settled_reason(path=None, today=None):
-    return weekly.settled_reason(path, NAME, today)

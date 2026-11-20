@@ -9,7 +9,7 @@ import json
 import re
 from datetime import datetime
 
-from showtimes_ingest import weekly
+from showtimes_ingest import refresh
 from showtimes_ingest.chains.pages import parse
 from showtimes_ingest.http import Client
 from showtimes_ingest.scores import search_title
@@ -183,22 +183,13 @@ def collect(client, today, known=None):
     }
 
 
-def published(client, day):
-    id, site = SITES[0]
-    root, cinemas = page(client, id, site)
-    _, shows = listing(root, cinemas, id, day)
-    return any(row["business_date"] == str(day) for row in shows.values())
-
-
 def ingest(path=None, today=None, client=None):
-    return weekly.ingest(path, NAME, collect, client or Client(SITES[0][1]), today)
+    return refresh.ingest(path, NAME, collect, client or Client(SITES[0][1]), today)
 
 
 def check(path=None, moment=None, client=None):
-    return weekly.check(
-        path, NAME, collect, published, client or Client(SITES[0][1]), moment
-    )
+    return refresh.check(path, NAME, collect, client or Client(SITES[0][1]), moment)
 
 
 def settled_reason(path=None, today=None):
-    return weekly.settled_reason(path, NAME, today)
+    return refresh.settled_reason(path, NAME, today)

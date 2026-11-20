@@ -31,10 +31,16 @@
   challenge or CAPTCHA: the browser stops at one. Cineworld and Curzon have working
   public guest pages read through the pinned curl-impersonate in Docker (`guest.py`),
   then the shared Vista collector (`chains/vista.py`); do not return to their blocked
-  Webedia/ordinary-HTTP routes. Everyman and Showcase share one adapter for Webedia's boxoffice platform
-  (`chains/boxoffice.py`, `site/src/chains/boxoffice.ts`); every chain but ODEON shares the weekly
-  check (`weekly.py`) and the `chains` job in the Ingest workflow, which runs after ODEON's job
-  because the tailnet identity is one device.
+  Webedia/ordinary-HTTP routes. ODEON is on the same Vista collector: curl-impersonate first,
+  one fallback to a real browser (`vista_browser.py`), the user's choice on 2026-11-20.
+  Everyman and Showcase share one adapter for Webedia's boxoffice platform
+  (`chains/boxoffice.py`, `site/src/chains/boxoffice.ts`). Every chain shares the lifecycle in
+  `refresh.py` and has its own workflow (`ingest-<chain>.yml` on `ingest-provider.yml`); those
+  using the tailnet queue for it, as the tailnet identity is one device.
+- Collection is weekly, not daily (the user's decision on 2026-11-20): each chain is due once per
+  window in `policy.py` (ODEON Wednesday 21:00, Everyman Wednesday 06:00, the rest Tuesday 06:00,
+  London time), and its workflow's cron runs at that window and twice more an hour later. Keep the
+  crons and `policy.py` in step.
 - Keep every chain's traffic minimal: one ingest per published week, no retry loops, and never
   fetch per-screening live data. Tests use a fake of each chain. ODEON's traffic goes through
   the owner's tailnet (`scripts/via-tailnet.sh`); its tailnet hostname and tag are set in the

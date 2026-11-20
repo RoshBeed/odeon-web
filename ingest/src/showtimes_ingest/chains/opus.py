@@ -9,12 +9,12 @@ from datetime import datetime
 from html import unescape
 from urllib.parse import urlsplit
 
-from showtimes_ingest import weekly
+from showtimes_ingest import refresh
 from showtimes_ingest.chains.pages import embedded, parse
 from showtimes_ingest.http import Client
 from showtimes_ingest.scores import search_title
 from showtimes_ingest.store import utc
-from showtimes_ingest.week import TZ, now
+from showtimes_ingest.week import TZ
 
 
 def collect(client, today, cinema):
@@ -131,17 +131,14 @@ class Cinema:
         return collect(client, today, self.cinema)
 
     def ingest(self, path=None, today=None, client=None):
-        return weekly.ingest(
+        return refresh.ingest(
             path, self.NAME, self.collect, client or Client(self.site), today
         )
 
     def settled_reason(self, path=None, today=None):
-        return weekly.programme_settled_reason(path, self.NAME, today)
+        return refresh.settled_reason(path, self.NAME, today)
 
     def check(self, path=None, moment=None, client=None):
-        today = (moment or now()).date()
-        reason = self.settled_reason(path, today)
-        if reason:
-            return reason
-        self.ingest(path, today, client)
-        return "ingested"
+        return refresh.check(
+            path, self.NAME, self.collect, client or Client(self.site), moment
+        )

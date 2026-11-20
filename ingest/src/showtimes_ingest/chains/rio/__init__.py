@@ -1,10 +1,9 @@
 """Rio Cinema, using its complete public Opus programme in one page."""
 
-from showtimes_ingest import weekly
+from showtimes_ingest import refresh
 from showtimes_ingest.chains import opus
 from showtimes_ingest.http import Client
 from showtimes_ingest.scores import search_title
-from showtimes_ingest.week import now
 
 NAME = "rio"
 SITE = "https://riocinema.org.uk"
@@ -28,17 +27,12 @@ def collect(client, today, known=None):
 
 
 def ingest(path=None, today=None, client=None):
-    return weekly.ingest(path, NAME, collect, client or Client(SITE), today)
+    return refresh.ingest(path, NAME, collect, client or Client(SITE), today)
 
 
 def settled_reason(path=None, today=None):
-    return weekly.programme_settled_reason(path, NAME, today)
+    return refresh.settled_reason(path, NAME, today)
 
 
 def check(path=None, moment=None, client=None):
-    today = (moment or now()).date()
-    reason = settled_reason(path, today)
-    if reason:
-        return reason
-    ingest(path, today, client)
-    return "ingested"
+    return refresh.check(path, NAME, collect, client or Client(SITE), moment)

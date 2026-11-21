@@ -20,7 +20,7 @@ const LANGUAGES = new Set([
   'japanese', 'kannada', 'korean', 'lithuanian', 'malayalam', 'mandarin', 'marathi', 'nepali', 'persian', 'polish',
   'portuguese', 'punjabi', 'romanian', 'russian', 'sinhala', 'spanish', 'tamil', 'telugu', 'turkish', 'ukrainian', 'urdu',
 ]);
-const PICTURE: Record<string, string> = { '3d': '3D', '4dx': '4DX', imax: 'IMAX', screenx: 'ScreenX', 'd-box': 'D-BOX', '35mm': '35mm', '70mm': '70mm', '4k': '4K' };
+const PICTURE: Record<string, string> = { 'infinity vision': 'Infinity Vision', '3d': '3D', '4dx': '4DX', imax: 'IMAX', screenx: 'ScreenX', 'd-box': 'D-BOX', '35mm': '35mm', '70mm': '70mm', '4k': '4K' };
 const SUBTITLED: Tag = { label: 'English subtitles', kind: 'Language' };
 
 /** What a decoration says about the showings, or null when it may be part of the name. */
@@ -44,6 +44,7 @@ function decoration(raw: string): { year?: number; tags: Tag[] } | null {
   if (/\bdirector'?s'? cut\b/.test(lower)) tags.push({ label: "Director's Cut", kind: 'Events' });
   if (/\b(pyjama|pj) party\b/.test(lower)) tags.push({ label: 'Pyjama Party', kind: 'Events' });
   if (/\b(discussion|panel)\b/.test(lower)) tags.push({ label: 'Discussion', kind: 'Events' });
+  if (/\bworkshop\b/.test(lower)) tags.push({ label: 'Workshop', kind: 'Events' });
   if (/\bintro(duction)?\b/.test(lower)) tags.push({ label: 'Intro', kind: 'Events' });
   if (/\b(mulled wine|mince pies|carols|festive)\b/.test(lower)) tags.push({ label: 'Festive', kind: 'Events' });
   if (/\bsing[- ]?a?[- ]?long\b/.test(lower)) tags.push({ label: 'Sing-along', kind: 'Events' });
@@ -57,12 +58,26 @@ function decoration(raw: string): { year?: number; tags: Tag[] } | null {
 /** Series a cinema puts before the title ("Film Club: Sunset Boulevard"); each is an event. */
 const SERIES = /^(film club|toddler club|throwback|see it first|green screen|[\w-]+(?: [\w-]+)? screening)\s*[:–—-]\s+(.+)$/i;
 /** Words that end a title without a bracket or dash, and are never a film's own ("Dune: Part Two Reissue"). */
-const ENDINGS = /^(.*?)[\s:]+(reissue|pyjama party|pj party|relaxed screening|sing[- ]?a?[- ]?long)$/i;
+const ENDINGS = /^(.*?)(?:[\s:]+|\s+[|I]\s+)(infinity vision|reissue|pyjama party|pj party|relaxed screening|sing[- ]?a?[- ]?long)$/i;
+
+/** Opera and ballet broadcasts each chain names its own way ("RBO Live 2026-27: Carmen",
+ *  "ROYAL BALLET & OPERA LIVE: CARMEN"): one name, with Live or Encore as a tag. */
+const BROADCASTS: [RegExp, string][] = [
+  [/^(?:rbo|royal ballet (?:&|and) opera)\b([^:]*):\s*(.+)$/i, 'Royal Ballet & Opera'],
+  [/^(?:the )?met(?:ropolitan)? opera\b([^:]*):\s*(.+)$/i, 'Met Opera'],
+];
 
 export function edition(raw: string): Edition {
   let title = raw.trim().replace(/[‘’]/g, "'").replace(/&amp;/g, '&');
   let year: number | null = null;
   const tags: Tag[] = [];
+  for (const [pattern, name] of BROADCASTS) {
+    const broadcast = pattern.exec(title);
+    if (!broadcast) continue;
+    if (/\bencore\b/i.test(broadcast[1])) tags.push({ label: 'Encore', kind: 'Events' });
+    else if (/\blive\b/i.test(broadcast[1])) tags.push({ label: 'Live', kind: 'Events' });
+    title = `${name}: ${broadcast[2]}`;
+  }
   const take = (found: ReturnType<typeof decoration>, rest: string) => {
     if (!found || !rest.trim()) return false;
     year ??= found.year ?? null;
@@ -92,7 +107,7 @@ export function edition(raw: string): Edition {
 
 /** Titles that match once case, punctuation and spacing are set aside, "+" and "&" read as "and",
  *  and a "The" after a "+" dropped: "Bear Hunt + The Tiger Who Came to Tea" is "… + Tiger Who Came To Tea". */
-export const titleKey = (title: string) => title.toLowerCase()
+export const titleKey = (title: string) => title.toLowerCase().normalize('NFD').replace(/\p{M}/gu, '') // Così, Cosi
   .replace(/^nt live\b/, 'national theatre live')
   .replace(/\+\s*the\s+/g, '+ ')
   .replace(/\s[+&]\s/g, ' and ')
@@ -100,3 +115,33 @@ export const titleKey = (title: string) => title.toLowerCase()
 
 /** A looser key that also drops every bracket and dash suffix, to find titles that may be one film yet were not merged. */
 export const looseKey = (title: string) => titleKey(title.replace(/[([][^)\]]*[)\]]/g, '').split(/\s[-–—|+]\s/)[0]);
+
+/** Words that say a prefix is a cinema's series, festival or kind of screening, not part of a name. */
+const SERIESISH = /\b(final shows|preview|relaxed|friendly|club|festival|presents|season|screen|cinema|carers|babies|members|escape|kids|toddler|parent|senior|silver|classics?|throwback|spotlight|retrospective)\b/i;
+
+/**
+ * A cinema's series or festival before a film's title ("IFF: Hamlet", "Members' Preview: Paper Tiger"),
+ * given every title listed. It comes off only when the rest is a film listed under its own name too,
+ * and the prefix reads as a series: on two titles or more, an acronym, or a word such as club or preview.
+ * So "Dune: Part Three" and "Avengers: Doomsday" stay, as no film is called "Part Three" or "Doomsday".
+ */
+export function seriesOff(titles: string[]): (title: string) => { title: string; tags: Tag[] } | null {
+  const split = (title: string) => /^(.{2,50}?)\s*(?::|\s[-–—]\s)\s*(.+)$/.exec(title);
+  const keys = new Set(titles.map(titleKey));
+  // How many different films each prefix is before: "The Hunger Games: Sunrise on the Reaping" in
+  // two spellings is one film, and its prefix part of the name.
+  const uses = new Map<string, Set<string>>();
+  for (const title of titles) {
+    const parts = split(title);
+    if (parts) uses.set(titleKey(parts[1]), (uses.get(titleKey(parts[1])) ?? new Set()).add(titleKey(parts[2])));
+  }
+  return (title) => {
+    const parts = split(title);
+    if (!parts || !keys.has(titleKey(parts[2]))) return null;
+    const prefix = parts[1].trim();
+    if ((uses.get(titleKey(prefix))?.size ?? 0) < 2 && !SERIESISH.test(prefix) && !/^[A-Z]{2,8}( \d{4})?$/.test(prefix)) return null;
+    const known = decoration(prefix);
+    const label = prefix.replace(/\s*\d{4}([-/]\d{2,4})?$/, '');
+    return { title: parts[2].trim(), tags: known?.tags.length ? known.tags : [{ label, kind: 'Events' }] };
+  };
+}

@@ -132,9 +132,10 @@ const busiest = (values: string[], counts: Map<string, number>) => [...values].s
 const plain = (value: string): [string, string] => [value, ''];
 const tag = (value: string): [string, string] => [value, ''];
 const cinemaNames = () => new Map(db.cinemas.map((cinema) => [cinema.id, cinema.short]));
-/** With more than one chain, a cinema's chain, for a note beside its name: two chains may each have a West End. */
+/** With more than one chain, a cinema's chain, for a note beside its name: two chains may each have a West End.
+ * Once a chain is picked, every cinema left is that chain's, so the note would only repeat it. */
 const chainOf = (cinemaId: string) => {
-  if (db.chains.size < 2) return '';
+  if (db.chains.size < 2 || view.picks.chain) return '';
   const chain = cinemaChains.get(cinemaId);
   return chain ? db.chains.get(chain)?.name ?? chain : '';
 };
@@ -159,7 +160,7 @@ const KINDS: Record<q.Facet, Kind> = {
     },
     natural: alphabetical(() => KINDS.film),
   },
-  cinema: { title: 'Cinema', about: 'each cinema', notes: () => (db.chains.size > 1 ? 'chain' : ''), label: (value) => [names.get(value) ?? value, chainOf(value)], natural: alphabetical(() => KINDS.cinema) },
+  cinema: { title: 'Cinema', about: 'each cinema', notes: () => (db.chains.size > 1 && !view.picks.chain ? 'chain' : ''), label: (value) => [names.get(value) ?? value, chainOf(value)], natural: alphabetical(() => KINDS.cinema) },
   location: { title: 'Location', about: 'towns and cities, and Greater London', label: plain, natural: alphabetical(() => KINDS.location) },
   picture: { title: 'Picture', about: 'IMAX, Dolby, 3D, Laser and the like', label: tag, natural: busiest },
   language: { title: 'Language', about: 'subtitles, captions and the language spoken', label: tag, natural: busiest },

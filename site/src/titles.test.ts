@@ -16,6 +16,7 @@ test('formats, years, languages and events come off the title as tags', () => {
   expect(read('Love Actually - Pyjama Party')).toEqual(['Love Actually', null, ['Events:Pyjama Party']]);
   expect(read('We, The Hated + in person director Q&amp;A')).toEqual(['We, The Hated', null, ['Events:Q&A']]);
   expect(read("It's A Wonderful Life (80th Anniversary) + Mulled Wine & Mince Pies")).toEqual(["It's A Wonderful Life", null, ['Events:Anniversary', 'Events:Festive']]);
+  expect(read('Prima Facie + panel')).toEqual(['Prima Facie', null, ['Events:Discussion']]);
   expect(read('Film Club: Sunset Boulevard (4K Restoration)')).toEqual(['Sunset Boulevard', null, ['Events:Film Club', 'Picture:Restoration']]);
   expect(read('Dune: Part Two Reissue')).toEqual(['Dune: Part Two', null, ['Events:Re-release']]);
   expect(read('The Polar Express: Relaxed Screening')).toEqual(['The Polar Express', null, ['Accessibility:Relaxed']]);
@@ -31,4 +32,6 @@ test('curly quotes, spacing and NT Live do not keep one film apart', () => {
   expect(titleKey(edition('Andrew Lloyd Webber’s Starlight Express').title)).toBe(titleKey("Andrew Lloyd Webber's Starlight Express"));
   expect(titleKey('Home Alone 2 : Lost in New York')).toBe(titleKey('Home Alone 2: Lost In New York'));
   expect(titleKey('NT Live: The Motive and the Cue')).toBe(titleKey('National Theatre Live: The Motive and the Cue'));
+  expect(titleKey('Jet Lag: The Game – Hide and Seek Italy')).toBe(titleKey('Jet Lag: The Game – Hide + Seek Italy'));
+  expect(titleKey("We're Going on a Bear Hunt + The Tiger Who Came to Tea")).toBe(titleKey("We're Going on a Bear Hunt + Tiger Who Came To Tea"));
 });

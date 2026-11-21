@@ -43,7 +43,7 @@ function decoration(raw: string): { year?: number; tags: Tag[] } | null {
   if (/\bq ?[&+] ?a\b/.test(lower)) tags.push({ label: 'Q&A', kind: 'Events' });
   if (/\bdirector'?s'? cut\b/.test(lower)) tags.push({ label: "Director's Cut", kind: 'Events' });
   if (/\b(pyjama|pj) party\b/.test(lower)) tags.push({ label: 'Pyjama Party', kind: 'Events' });
-  if (/\bdiscussion\b/.test(lower)) tags.push({ label: 'Discussion', kind: 'Events' });
+  if (/\b(discussion|panel)\b/.test(lower)) tags.push({ label: 'Discussion', kind: 'Events' });
   if (/\bintro(duction)?\b/.test(lower)) tags.push({ label: 'Intro', kind: 'Events' });
   if (/\b(mulled wine|mince pies|carols|festive)\b/.test(lower)) tags.push({ label: 'Festive', kind: 'Events' });
   if (/\bsing[- ]?a?[- ]?long\b/.test(lower)) tags.push({ label: 'Sing-along', kind: 'Events' });
@@ -90,8 +90,13 @@ export function edition(raw: string): Edition {
   return { title, year, tags };
 }
 
-/** Titles that match once case, punctuation and spacing are set aside. */
-export const titleKey = (title: string) => title.toLowerCase().replace(/^nt live\b/, 'national theatre live').replace(/[^\p{L}\p{N}]+/gu, '');
+/** Titles that match once case, punctuation and spacing are set aside, "+" and "&" read as "and",
+ *  and a "The" after a "+" dropped: "Bear Hunt + The Tiger Who Came to Tea" is "… + Tiger Who Came To Tea". */
+export const titleKey = (title: string) => title.toLowerCase()
+  .replace(/^nt live\b/, 'national theatre live')
+  .replace(/\+\s*the\s+/g, '+ ')
+  .replace(/\s[+&]\s/g, ' and ')
+  .replace(/[^\p{L}\p{N}]+/gu, '');
 
 /** A looser key that also drops every bracket and dash suffix, to find titles that may be one film yet were not merged. */
 export const looseKey = (title: string) => titleKey(title.replace(/[([][^)\]]*[)\]]/g, '').split(/\s[-–—|+]\s/)[0]);

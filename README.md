@@ -144,6 +144,7 @@ London only) and keeps them in memory, so every key press is answered at once.
 | --- | --- | --- |
 | Ingest | `ingest/` (Python) | A core (the shared schema, the runs, IMDb and Metacritic ratings) and a package for each chain in `chains/` that fetches it into its own SQLite file |
 | Export | `site/src/export.ts`, `site/src/chains/` | At build time, reads every chain's file through that chain's module, which names its tags, towns, seats and booking link in the shared vocabulary, and writes the JSON the page downloads |
+| Titles | `site/src/titles.ts` | Takes what chains add to a title (`(4DX)`, `(1995)`, `(Tamil)`, `- Senior Screening`, `+ Q&A`) off it, so that every chain's listing of a film is one film, and keeps it as a tag on those showings. Each Deploy run's summary lists titles that look alike but stayed apart |
 | Site | `site/src/` (TypeScript, Vite) | The interface; it knows no chain's own strings |
 | Listings | the `data` release of this repository | Each chain's `<chain>.sqlite.gz`; also its ingest's only memory between runs |
 | Workflows | `.github/workflows/` | `Ingest` (each chain's schedule), `Deploy` (GitHub Pages), `CI` |

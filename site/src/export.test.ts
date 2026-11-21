@@ -6,7 +6,7 @@ import { odeon } from './chains/odeon';
 import { olympic } from './chains/olympic';
 import { reel } from './chains/reel';
 import * as q from './queries';
-import { exportListings } from './export';
+import { exportListings, unmerged } from './export';
 
 const store = readFileSync(new URL('../../ingest/src/showtimes_ingest/store.py', import.meta.url), 'utf8');
 const SCHEMA = /SCHEMA = """([\s\S]*?)"""/.exec(store)![1];
@@ -60,4 +60,21 @@ test('screening labels in a provider title do not create a duplicate film', () =
   expect(data.films.map((film) => film.title)).toEqual(['A Film']);
   expect(data.rows).toHaveLength(2);
   expect(q.booking(q.open(data), { cinemaId: 'reel-hull', id: '123/a-film' })).toBe('https://hull.reelcinemas.co.uk/hull/booking/123/a-film');
+});
+
+test('one film in many titles is one film, its showings tagged with what the titles said; remakes stay apart', () => {
+  const data = exportListings([
+    { chain: odeon, sqlite: chain('155', ['HO1', '(4DX) The Polar Express', null, ''], 2) },
+    { chain: everyman, sqlite: chain('X1', ['6272', 'The Polar Express (2004)', null, ''], 1) },
+    { chain: reel, sqlite: chain('hull', ['b', 'Black Christmas (1974)', null, ''], 1) },
+    { chain: olympic, sqlite: chain('barnes', ['c', 'Black Christmas (2006)', null, ''], 1) },
+  ]);
+  expect(data.films.map((film) => film.title).sort()).toEqual(['Black Christmas (1974)', 'Black Christmas (2006)', 'The Polar Express']);
+  const listings = q.open(data);
+  const polar = data.rows.filter((row) => data.values[row[2]] === 'odeon-HO1');
+  expect(polar).toHaveLength(3); // the 4DX and the plain listing's showings, as one film
+  expect(polar.map((row) => data.values[row[10]])).toContainEqual(['4DX']);
+  expect(data.tags['4DX']).toBe('Picture');
+  expect(listings).toBeTruthy();
+  expect(unmerged(data)).toEqual([['Black Christmas (1974)', 'Black Christmas (2006)']]);
 });

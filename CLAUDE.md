@@ -16,7 +16,12 @@
 - IDs the site sees are namespaced by chain: `odeon-155`, `odeon-HO00012345`. A showing's own ID
   stays the chain's (it goes into the booking link). Films listed more than once (ODEON's UK and
   Irish editions, or by two chains) are merged when their titles match apart from case and
-  punctuation, into the listing with the most showings.
+  punctuation, into the listing with the most showings. First `site/src/titles.ts` takes known
+  decorations off each title (formats such as `(4DX)` or `- 3D`, a year, a language, subtitles,
+  events such as `- Senior Screening` or `+ Q&A`) and keeps them as tags on that listing's
+  showings; titles giving different years stay apart as remakes. Each build lists titles that look
+  alike but were not merged in the Deploy run's summary: teach `titles.ts` a new decoration from
+  there, and leave anything that may be part of a name alone.
 - The schema lives in `ingest/src/showtimes_ingest/store.py`. The site's tests read it from
   there, so change the schema and `site/src/export.ts` together. `site/src/queries.ts` answers
   every question with a loop over the showings; keep key presses free of anything slower.

@@ -35,7 +35,9 @@ jobs:
       - name: Build the site in Docker
         if: steps.listings.outputs.published == 'true'
         run: |
+          # The step summary is mounted so the export can list the films it did not merge.
           docker run --rm -v "$PWD:/work" -w /work/site \
+            -e GITHUB_STEP_SUMMARY -v "$GITHUB_STEP_SUMMARY:$GITHUB_STEP_SUMMARY" \
             --mount type=volume,target=/work/site/node_modules,volume-nocopy \
             node:26-bookworm-slim sh -c 'npm ci && npm run listings && npm run build'
       - uses: actions/configure-pages@v6

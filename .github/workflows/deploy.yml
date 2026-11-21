@@ -14,12 +14,13 @@ permissions:
   pages: write
   id-token: write
 jobs:
-  deploy:
+  # Built and deployed in two jobs, as GitHub's own Pages workflow does: a deploy in the same job
+  # as its upload sometimes looked for the artifact before GitHub listed it ("Found 0 artifact(s)").
+  build:
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.pages.outputs.page_url }}
+    outputs:
+      published: ${{ steps.listings.outputs.published }}
     steps:
       - uses: actions/checkout@v7
       - name: Fetch the listings the site carries
@@ -46,6 +47,13 @@ jobs:
         if: steps.listings.outputs.published == 'true'
         with:
           path: site/dist
+  deploy:
+    needs: build
+    if: needs.build.outputs.published == 'true'
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.pages.outputs.page_url }}
+    steps:
       - uses: actions/deploy-pages@v5
-        if: steps.listings.outputs.published == 'true'
         id: pages

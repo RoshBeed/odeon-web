@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest';
-import { edition, titleKey } from './titles';
+import { edition, seriesOff, titleKey } from './titles';
 
 const read = (title: string) => {
   const cut = edition(title);
@@ -34,4 +34,25 @@ test('curly quotes, spacing and NT Live do not keep one film apart', () => {
   expect(titleKey('NT Live: The Motive and the Cue')).toBe(titleKey('National Theatre Live: The Motive and the Cue'));
   expect(titleKey('Jet Lag: The Game – Hide and Seek Italy')).toBe(titleKey('Jet Lag: The Game – Hide + Seek Italy'));
   expect(titleKey("We're Going on a Bear Hunt + The Tiger Who Came to Tea")).toBe(titleKey("We're Going on a Bear Hunt + Tiger Who Came To Tea"));
+});
+
+test('opera and ballet broadcasts have one name, whatever each chain calls the season', () => {
+  const names = ['RBO Live 2026-27: The Nutcracker', 'RBO Cinema Season 2026-27: THE NUTCRACKER', 'ROYAL BALLET & OPERA LIVE: The Nutcracker', 'Royal Ballet & Opera 2026/27: The Nutcracker'];
+  expect(new Set(names.map((name) => titleKey(edition(name).title)))).toEqual(new Set([titleKey('Royal Ballet & Opera: The Nutcracker')]));
+  expect(read('RBO Encore 2026-27: Manon')).toEqual(['Royal Ballet & Opera: Manon', null, ['Events:Encore']]);
+  expect(read('Met Opera Live 2026-27: Manon')).toEqual(['Met Opera: Manon', null, ['Events:Live']]);
+  expect(titleKey('Così Fan Tutte')).toBe(titleKey('Cosi fan tutte'));
+});
+
+test("a cinema's series comes off a film listed in its own name too; a name's own prefix stays", () => {
+  const off = seriesOff([
+    'IFF: Hamlet', 'IFF: Charlie the Wonderdog', 'Hamlet', 'Members Preview: Paper Tiger', 'Paper Tiger',
+    'Dune: Part Three', 'Dune: Part Two', 'Avengers: Doomsday',
+    'The Hunger Games: Sunrise on the Reaping', 'The Hunger Games: Sunrise On The Reaping', 'Sunrise on the Reaping',
+    'Twin Peaks: Fire Walk With Me',
+  ]);
+  expect(off('IFF: Hamlet')).toEqual({ title: 'Hamlet', tags: [{ label: 'IFF', kind: 'Events' }] });
+  expect(off('Members Preview: Paper Tiger')).toEqual({ title: 'Paper Tiger', tags: [{ label: 'Preview', kind: 'Events' }] });
+  expect(off('IFF: Charlie the Wonderdog')).toBeNull(); // not listed alone
+  for (const name of ['Dune: Part Three', 'Avengers: Doomsday', 'The Hunger Games: Sunrise on the Reaping', 'Twin Peaks: Fire Walk With Me']) expect(off(name)).toBeNull();
 });

@@ -6,7 +6,7 @@ import type { DatabaseSync } from 'node:sqlite';
 import type { Chain } from './chains/chain';
 import type { Data, Film } from './queries';
 import type { TagKind } from './tags';
-import { edition, looseKey, titleKey, type Tag } from './titles.ts';
+import { edition, looseKey, seriesOff, titleKey, type Tag } from './titles.ts';
 
 /** A chain's stored listings: its file, opened, and its module. */
 export interface Source {
@@ -43,6 +43,7 @@ export function exportListings(sources: Source[], only?: Set<string>): Data {
   /** What each listing's title said about its showings, and the year it gave. */
   const decorations = new Map<string, Tag[]>();
   const years = new Map<string, number>();
+  const listed: Film[] = [];
   for (const { chain, sqlite } of sources) {
     for (const [id, count] of read(sqlite, 'SELECT film_id, count(*) FROM screenings GROUP BY film_id') as unknown as [string, number][]) {
       showings.set(own(chain, id), count);
@@ -64,9 +65,19 @@ export function exportListings(sources: Source[], only?: Set<string>): Data {
       film.title = cut.title;
       decorations.set(film.id, cut.tags);
       if (cut.year) years.set(film.id, cut.year);
-      const key = titleKey(film.title) || film.id;
-      editions.set(key, [...(editions.get(key) ?? []), film]);
+      listed.push(film);
     }
+  }
+  // A cinema's series before a film's title ("IFF: Hamlet") comes off once every title is known.
+  const series = seriesOff(listed.map((film) => film.title));
+  for (const film of listed) {
+    const off = series(film.title);
+    if (off) {
+      film.title = off.title;
+      decorations.get(film.id)!.push(...off.tags);
+    }
+    const key = titleKey(film.title) || film.id;
+    editions.set(key, [...(editions.get(key) ?? []), film]);
   }
   const groups = [...editions.values()].flatMap((listings) => {
     const given = [...new Set(listings.map((film) => years.get(film.id)).filter((year) => year !== undefined))];

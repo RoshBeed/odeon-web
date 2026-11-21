@@ -9,7 +9,8 @@ what the rest of the title said, as tags.
 
 Decisions are kept in <folder>/titles.json, so each title is asked about once; the
 site's export reads that file. The folder holds the chains' <chain>.sqlite files.
-Needs ANTHROPIC_API_KEY when there are new titles.
+Needs Claude credentials when there are new titles: in the Deploy, Workload Identity
+Federation (the ANTHROPIC_FEDERATION_* variables and an identity token file).
 """
 
 import json

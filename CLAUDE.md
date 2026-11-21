@@ -16,12 +16,14 @@
 - IDs the site sees are namespaced by chain: `odeon-155`, `odeon-HO00012345`. A showing's own ID
   stays the chain's (it goes into the booking link). Films listed more than once (ODEON's UK and
   Irish editions, or by two chains) are merged when their titles match apart from case and
-  punctuation, into the listing with the most showings. First `site/src/titles.ts` takes known
-  decorations off each title (formats such as `(4DX)` or `- 3D`, a year, a language, subtitles,
-  events such as `- Senior Screening` or `+ Q&A`) and keeps them as tags on that listing's
-  showings; titles giving different years stay apart as remakes. Each build lists titles that look
-  alike but were not merged in the Deploy run's summary: teach `titles.ts` a new decoration from
-  there, and leave anything that may be part of a name alone.
+  punctuation, into the listing with the most showings. Titles are cleaned first by Claude, not by
+  hand-written rules (the user's decision, 2026-11-21): `showtimes-titles`
+  (`ingest/src/showtimes_ingest/titles.py`, Claude Opus 5.5) runs in each Deploy, asks only about
+  titles it has not seen, and keeps its decisions in `titles.json` on the data release. Each
+  decision is the film's own name, the year the title gives (remakes stay apart), and tags for what
+  the rest said (format, language, festival or series, screening type, add-ons). The export reads
+  them; `site/src/titles.overrides.json` corrects a wrong decision. Each Deploy summary lists what
+  Claude decided. Deleting an entry from `titles.json` makes Claude decide it again.
 - The schema lives in `ingest/src/showtimes_ingest/store.py`. The site's tests read it from
   there, so change the schema and `site/src/export.ts` together. `site/src/queries.ts` answers
   every question with a loop over the showings; keep key presses free of anything slower.

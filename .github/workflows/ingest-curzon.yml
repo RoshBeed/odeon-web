@@ -27,6 +27,6 @@ jobs:
       provider: curzon
       command: ${{ inputs.command || 'check' }}
       browser: true
-      via-tailnet: false
+      via-tailnet: true
       workflow: ingest-curzon.yml
     secrets: inherit

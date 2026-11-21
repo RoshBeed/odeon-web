@@ -94,8 +94,16 @@ def film_links(root, cinema, site):
     )
 
 
+def withdrawn(root):
+    """A film still linked from the programme that the cinema has since stopped showing."""
+    return any(node.text == "Film not available here" for node in root.find("h2"))
+
+
 def movie_page(root, cinema, url, today, site):
+    """The film and its showings, or None when the cinema no longer shows it."""
     title = next(root.find("h1"), None)
+    if title is None and withdrawn(root):
+        return None
     if title is None:
         raise RuntimeError(f"Jacro: missing film information on {url}")
     props = fields(root, "movie-info", "i")
@@ -339,9 +347,10 @@ class Jacro:
                     raise RuntimeError(f"Jacro: no film directory for {cinema}")
                 movies, screenings = [], []
                 for url in links:
-                    film, rows = self.movie_page(
-                        parse(client.text(url)), cinema, url, today
-                    )
+                    page = self.movie_page(parse(client.text(url)), cinema, url, today)
+                    if page is None:
+                        continue
+                    film, rows = page
                     movies.append(film)
                     screenings.extend(rows)
             if not screenings:

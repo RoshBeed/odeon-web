@@ -99,6 +99,14 @@ class ReelTest(unittest.TestCase):
         )
         self.assertEqual(shows[0]["starts_at"], "2026-07-01T19:30:00Z")
 
+    def test_a_film_the_cinema_no_longer_shows_is_skipped(self):
+        root = parse(
+            "<header><h2>Film not available here</h2></header>"
+            "<p>Sorry, Reel Chorley is not showing A Film.</p>"
+        )
+        url = "https://reelcinemas.co.uk/chorley/film/123/a-film/"
+        self.assertIsNone(reel.movie_page(root, "chorley", url, TODAY))
+
     def test_missing_film_and_unexpected_ticket_links_fail_instead_of_dropping_showings(
         self,
     ):
